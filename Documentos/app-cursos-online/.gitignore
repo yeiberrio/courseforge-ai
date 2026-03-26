@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# next.js
+.next/
+out/
+
+# build
+dist/
+build/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# turbo
+.turbo/
+
+# misc
+.DS_Store
+*.tsbuildinfo
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# sentry
+.sentryclirc
+
+# backend uploads
+backend/uploads/
+
+# capacitor native
+apps/web/android/
+apps/web/ios/
+
+# prisma
+backend/prisma/migrations/

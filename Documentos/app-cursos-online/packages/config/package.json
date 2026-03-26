@@ -1,0 +1,6 @@
+{
+  "name": "@courseforge/config",
+  "private": true,
+  "files": ["typescript", "eslint", "tailwind"],
+  "devDependencies": {}
+}

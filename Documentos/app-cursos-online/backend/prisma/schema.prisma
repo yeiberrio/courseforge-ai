@@ -1,0 +1,483 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  CREATOR
+  STUDENT
+  MODERATOR
+}
+
+enum CourseStatus {
+  DRAFT
+  GENERATING
+  REVIEW
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ModuleStatus {
+  PENDING
+  GENERATING
+  DONE
+  FAILED
+}
+
+enum VideoJobStatus {
+  QUEUED
+  PROCESSING
+  DONE
+  FAILED
+  REVIEW
+  APPROVED
+}
+
+enum VoiceMode {
+  CLONE
+  TTS_GENERIC
+}
+
+enum AvatarProvider {
+  HEYGEN
+  DID
+}
+
+enum SlideStyle {
+  MINIMAL
+  BRANDED
+  DARK
+}
+
+enum PublicationStatus {
+  PENDING
+  PARTIAL
+  DONE
+  FAILED
+}
+
+enum AgentScope {
+  GLOBAL
+  CATEGORY
+  COURSE
+}
+
+enum AgentType {
+  SALES
+  SUPPORT
+  TUTOR
+  FOLLOWUP
+}
+
+enum AgentTone {
+  FORMAL
+  CASUAL
+  FRIENDLY
+}
+
+enum ChatMessageRole {
+  USER
+  ASSISTANT
+}
+
+enum DiscountType {
+  PCT
+  FIXED
+}
+
+enum HeatmapEventType {
+  PLAY
+  PAUSE
+  SEEK
+  EXIT
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password_hash String
+  full_name     String
+  avatar_url    String?
+  role          UserRole @default(STUDENT)
+  active        Boolean  @default(true)
+  refresh_token String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+  deleted_at    DateTime?
+
+  creator_profile    CreatorProfile?
+  student_profile    StudentProfile?
+  courses            Course[]
+  purchases          Purchase[]
+  enrollments        Enrollment[]
+  chat_sessions      ChatSession[]
+  affiliate_links    AffiliateLink[]
+
+  @@map("users")
+}
+
+model CreatorProfile {
+  user_id            String  @id
+  bio                String?
+  voice_clone_id     String?
+  avatar_config      Json?
+  stripe_account_id  String?
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("creator_profiles")
+}
+
+model StudentProfile {
+  user_id            String  @id
+  timezone           String?
+  preferred_language String?
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("student_profiles")
+}
+
+model Category {
+  id              String    @id @default(uuid())
+  slug            String    @unique
+  name            String
+  description     String?
+  parent_id       String?
+  image_url       String?
+  agent_config_id String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  parent   Category?  @relation("CategoryTree", fields: [parent_id], references: [id])
+  children Category[] @relation("CategoryTree")
+  courses  Course[]
+
+  @@map("categories")
+}
+
+model Course {
+  id                String       @id @default(uuid())
+  creator_id        String
+  category_id       String
+  slug              String       @unique
+  title             String
+  description_short String?
+  description_long  String?
+  status            CourseStatus @default(DRAFT)
+  price_cents       Int          @default(0)
+  currency          String       @default("USD")
+  thumbnail_url     String?
+  preview_video_url String?
+  seo_title         String?
+  seo_description   String?
+  seo_keywords      String?
+  generation_config Json?
+  published_at      DateTime?
+  created_at        DateTime     @default(now())
+  updated_at        DateTime     @updatedAt
+  deleted_at        DateTime?
+
+  creator              User                  @relation(fields: [creator_id], references: [id])
+  category             Category              @relation(fields: [category_id], references: [id])
+  modules              CourseModule[]
+  tags                 CourseTag[]
+  video_jobs           VideoJob[]
+  generation_configs   GenerationConfig[]
+  publication_schedules PublicationSchedule[]
+  purchases            Purchase[]
+  enrollments          Enrollment[]
+  affiliate_links      AffiliateLink[]
+  analytics            CourseAnalytics[]
+
+  @@index([creator_id])
+  @@index([category_id])
+  @@index([status])
+  @@index([slug])
+  @@map("courses")
+}
+
+model CourseModule {
+  id               String       @id @default(uuid())
+  course_id        String
+  order            Int
+  title            String
+  duration_seconds Int?
+  video_url        String?
+  script           String?
+  status           ModuleStatus @default(PENDING)
+  created_at       DateTime     @default(now())
+  updated_at       DateTime     @updatedAt
+
+  course          Course              @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  video_jobs      VideoJob[]
+  progress        ModuleProgress[]
+  heatmap_events  VideoHeatmapEvent[]
+
+  @@unique([course_id, order])
+  @@map("course_modules")
+}
+
+model CourseTag {
+  course_id String
+  tag       String
+
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@id([course_id, tag])
+  @@map("course_tags")
+}
+
+model VideoJob {
+  id            String         @id @default(uuid())
+  course_id     String
+  module_id     String
+  status        VideoJobStatus @default(QUEUED)
+  config        Json?
+  assets        Json?
+  assembled_url String?
+  error_log     String?
+  created_at    DateTime       @default(now())
+  completed_at  DateTime?
+
+  course Course       @relation(fields: [course_id], references: [id])
+  module CourseModule @relation(fields: [module_id], references: [id])
+
+  @@index([course_id])
+  @@index([status])
+  @@map("video_jobs")
+}
+
+model GenerationConfig {
+  id                            String         @id @default(uuid())
+  course_id                     String
+  voice_mode                    VoiceMode      @default(TTS_GENERIC)
+  voice_id                      String?
+  avatar_enabled                Boolean        @default(false)
+  avatar_provider               AvatarProvider?
+  avatar_id                     String?
+  slide_style                   SlideStyle     @default(MINIMAL)
+  background_music              Boolean        @default(false)
+  language                      String         @default("es")
+  target_duration_per_module_min Int?
+  thumbnail_style               String?
+  created_at                    DateTime       @default(now())
+
+  course Course @relation(fields: [course_id], references: [id])
+
+  @@map("generation_configs")
+}
+
+model PublicationSchedule {
+  id        String            @id @default(uuid())
+  course_id String
+  platforms Json?
+  status    PublicationStatus @default(PENDING)
+  results   Json?
+  created_at DateTime         @default(now())
+
+  course Course @relation(fields: [course_id], references: [id])
+
+  @@map("publication_schedules")
+}
+
+model Purchase {
+  id                String   @id @default(uuid())
+  student_id        String
+  course_id         String
+  amount_cents      Int
+  currency          String   @default("USD")
+  stripe_payment_id String?
+  wompi_id          String?
+  purchased_at      DateTime @default(now())
+
+  student User   @relation(fields: [student_id], references: [id])
+  course  Course @relation(fields: [course_id], references: [id])
+
+  @@index([student_id])
+  @@index([course_id])
+  @@map("purchases")
+}
+
+model Enrollment {
+  id              String    @id @default(uuid())
+  student_id      String
+  course_id       String
+  enrolled_at     DateTime  @default(now())
+  completed_at    DateTime?
+  certificate_url String?
+
+  student      User          @relation(fields: [student_id], references: [id])
+  course       Course        @relation(fields: [course_id], references: [id])
+  certificates Certificate[]
+
+  @@unique([student_id, course_id])
+  @@map("enrollments")
+}
+
+model ModuleProgress {
+  student_id      String
+  module_id       String
+  watched_seconds Int      @default(0)
+  completed       Boolean  @default(false)
+  last_watched_at DateTime?
+
+  module CourseModule @relation(fields: [module_id], references: [id])
+
+  @@id([student_id, module_id])
+  @@map("module_progress")
+}
+
+model AgentConfig {
+  id               String     @id @default(uuid())
+  scope            AgentScope @default(GLOBAL)
+  scope_id         String?
+  agent_type       AgentType
+  name             String
+  personality      String?
+  tone             AgentTone  @default(FRIENDLY)
+  languages        Json?
+  rag_documents_ids Json?
+  escalation_rules Json?
+  active           Boolean    @default(true)
+  created_at       DateTime   @default(now())
+  updated_at       DateTime   @updatedAt
+
+  rag_documents RagDocument[]
+  chat_sessions ChatSession[]
+
+  @@map("agent_configs")
+}
+
+model RagDocument {
+  id              String   @id @default(uuid())
+  agent_config_id String
+  course_id       String?
+  title           String
+  content_text    String
+  embedding       String?
+  created_at      DateTime @default(now())
+
+  agent_config AgentConfig @relation(fields: [agent_config_id], references: [id])
+
+  @@map("rag_documents")
+}
+
+model ChatSession {
+  id              String   @id @default(uuid())
+  agent_config_id String
+  user_id         String
+  session_token   String   @unique
+  started_at      DateTime @default(now())
+
+  agent_config AgentConfig   @relation(fields: [agent_config_id], references: [id])
+  user         User          @relation(fields: [user_id], references: [id])
+  messages     ChatMessage[]
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id         String          @id @default(uuid())
+  session_id String
+  role       ChatMessageRole
+  content    String
+  created_at DateTime        @default(now())
+
+  session ChatSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+
+  @@index([session_id])
+  @@map("chat_messages")
+}
+
+model AffiliateLink {
+  id             String @id @default(uuid())
+  user_id        String
+  course_id      String
+  code           String @unique
+  commission_pct Float  @default(30)
+  clicks         Int    @default(0)
+  conversions    Int    @default(0)
+
+  user   User   @relation(fields: [user_id], references: [id])
+  course Course @relation(fields: [course_id], references: [id])
+
+  @@map("affiliate_links")
+}
+
+model Coupon {
+  id             String       @id @default(uuid())
+  code           String       @unique
+  discount_type  DiscountType
+  discount_value Float
+  max_uses       Int?
+  used_count     Int          @default(0)
+  expires_at     DateTime?
+  created_at     DateTime     @default(now())
+
+  @@map("coupons")
+}
+
+model EmailSubscriber {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  name            String?
+  source          String?
+  tags            Json?
+  subscribed_at   DateTime  @default(now())
+  unsubscribed_at DateTime?
+
+  @@map("email_subscribers")
+}
+
+model Certificate {
+  id            String   @id @default(uuid())
+  enrollment_id String
+  code          String   @unique
+  issued_at     DateTime @default(now())
+  template_id   String?
+
+  enrollment Enrollment @relation(fields: [enrollment_id], references: [id])
+
+  @@map("certificates")
+}
+
+model CourseAnalytics {
+  course_id          String
+  date               DateTime @db.Date
+  views              Int      @default(0)
+  enrollments        Int      @default(0)
+  revenue_cents      Int      @default(0)
+  completion_rate    Float    @default(0)
+  avg_watch_time_sec Int      @default(0)
+
+  course Course @relation(fields: [course_id], references: [id])
+
+  @@id([course_id, date])
+  @@map("course_analytics")
+}
+
+model VideoHeatmapEvent {
+  id         String           @id @default(uuid())
+  module_id  String
+  student_id String
+  second     Int
+  event_type HeatmapEventType
+  created_at DateTime         @default(now())
+
+  module CourseModule @relation(fields: [module_id], references: [id])
+
+  @@index([module_id])
+  @@map("video_heatmap_events")
+}

@@ -1,0 +1,9 @@
+{
+  "name": "@courseforge/db",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "zod": "^3.24.0"
+  }
+}
