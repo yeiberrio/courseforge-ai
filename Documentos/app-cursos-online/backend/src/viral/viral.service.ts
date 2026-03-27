@@ -192,7 +192,19 @@ export class ViralService {
 
     this.logger.log(`Viral search: found ${videos.length} videos for category ${category}`);
 
-    return { search, videos };
+    // Map to frontend format
+    const mappedVideos = videos.map((v: any) => ({
+      videoId: v.youtube_video_id,
+      title: v.title,
+      channelTitle: v.channel_name,
+      thumbnail: v.thumbnail_url,
+      viewCount: Number(v.view_count),
+      likeCount: v.like_count,
+      duration: this.formatDuration(v.duration_seconds),
+      publishedAt: v.published_at?.toISOString?.() || v.published_at,
+    }));
+
+    return { search, videos: mappedVideos, totalResults: mappedVideos.length, category };
   }
 
   /**
@@ -463,8 +475,14 @@ FORMATO DE SALIDA (JSON estricto):
         take: 10,
       });
       result[cat.toLowerCase()] = videos.map((v) => ({
-        ...v,
-        view_count: Number(v.view_count),
+        videoId: v.youtube_video_id,
+        title: v.title,
+        channelTitle: v.channel_name,
+        thumbnail: v.thumbnail_url,
+        viewCount: Number(v.view_count),
+        likeCount: v.like_count,
+        duration: this.formatDuration(v.duration_seconds),
+        publishedAt: v.published_at?.toISOString?.() || v.published_at,
       }));
     }
 
@@ -475,12 +493,21 @@ FORMATO DE SALIDA (JSON estricto):
    * Get search history for a user.
    */
   async getHistory(userId: string) {
-    return this.prisma.viralSearch.findMany({
+    const searches = await this.prisma.viralSearch.findMany({
       where: { user_id: userId },
       orderBy: { created_at: 'desc' },
       take: 20,
       include: { _count: { select: { videos: true } } },
     });
+    return searches.map((s) => ({
+      id: s.id,
+      category: s.category,
+      minViews: s.min_views,
+      minLikes: s.min_likes,
+      dateRange: s.date_range,
+      resultsCount: s.results_count,
+      createdAt: s.created_at?.toISOString?.() || s.created_at,
+    }));
   }
 
   // ─── Private helpers ──────────────────────────────────────────────
@@ -512,6 +539,14 @@ FORMATO DE SALIDA (JSON estricto):
     } catch {
       return null;
     }
+  }
+
+  private formatDuration(totalSeconds: number): string {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
   }
 
   private parseDuration(isoDuration: string): number {
