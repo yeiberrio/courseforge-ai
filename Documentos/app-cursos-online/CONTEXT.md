@@ -880,8 +880,12 @@ Modelos implementados:
 - `JWT_EXPIRATION` — `15m`
 - `JWT_REFRESH_EXPIRATION` — `7d`
 - `FRONTEND_URL` — URL de Vercel (CORS)
+- `OPENAI_API_KEY` — API Key de OpenAI (guiones, embeddings, Whisper, DALL-E)
 - `DID_API_KEY` — API Key de D-ID para avatar IA
-- `ANTHROPIC_API_KEY` — (opcional) Para guiones con Claude
+- `HEYGEN_API_KEY` — API Key de HeyGen para avatar IA avanzado
+- `YOUTUBE_API_KEY` — API Key de YouTube Data API v3
+- `YOUTUBE_CLIENT_ID` — OAuth2 Client ID de Google Cloud
+- `YOUTUBE_CLIENT_SECRET` — OAuth2 Client Secret de Google Cloud
 - `NODE_ENV` — `production`
 - `PORT` — `3000`
 
@@ -896,23 +900,59 @@ Modelos implementados:
 | Creator | `creator@courseforge.com` | `Creator2026*` |
 | Student | `student@courseforge.com` | `Student2026*` |
 
-### 13.9 Pendiente por implementar
+### 13.9 Estado de implementación (actualizado 27/03/2026)
 
-**Fase 1 restante:**
+**Generación de video con IA (completado):**
+- [x] Generación de guiones con OpenAI (GPT)
+- [x] Generación de video con D-ID (avatar IA)
+- [x] Generación de video con HeyGen (avatar IA avanzado)
+- [x] Formulario multi-paso de generación en frontend
+- [x] Polling de progreso de generación
+
+**YouTube — Publicación y contenido viral (backend + frontend completados):**
+- [x] Backend: módulo YouTube (controller, service, module)
+- [x] Backend: módulo Viral (búsqueda, trending, historial, procesamiento con Claude)
+- [x] Frontend: página principal YouTube con navegación a subpáginas
+- [x] Frontend: páginas de conectar canal, canales, publicar, publicaciones
+- [x] Frontend: página de contenido viral con filtros y búsqueda
+- [x] Frontend: página de procesar video viral
+- [x] Sidebar: enlaces a YouTube, Contenido Viral, Base de Conocimiento
+
+**Base de Conocimiento (backend + frontend completados):**
+- [x] Backend: módulo Knowledge Base (controller, service, module)
+- [x] Frontend: página de base de conocimiento y detalle
+
+**APIs configuradas (local + Railway):**
+- [x] OpenAI (guiones, embeddings)
+- [x] HeyGen (avatar IA)
+- [x] D-ID (avatar IA alternativo)
+- [x] YouTube Data API v3 (búsqueda, publicación)
+- [x] YouTube OAuth2 (Client ID + Secret para publicar en nombre del creador)
+
+**APIs pendientes por configurar:**
+- [ ] ElevenLabs (clonación de voz / TTS)
+- [ ] Stripe (pagos internacionales)
+- [ ] Wompi (pagos Colombia)
+- [ ] Resend (emails transaccionales)
+- [ ] Mux (video hosting/streaming)
+- [ ] Upstash Redis (colas BullMQ)
+- [ ] Sentry (monitoreo de errores)
+
+**Pendiente — Fase 1 restante:**
 - [ ] Player de video en detalle del curso (actualmente muestra URL)
 - [ ] Progreso real de estudiante al ver videos
 - [ ] Aprobar/rechazar módulos en revisión
+- [ ] Ejecutar `prisma db push` en BD de producción (Railway) para crear tablas de viral/youtube/knowledge-base
 
-**Fase 2:**
+**Pendiente — Fase 2:**
 - [ ] Agentes IA (ventas, tutor, soporte) con RAG
 - [ ] Certificados verificables (PDF + QR)
 - [ ] Email sequences (Resend)
 - [ ] Pagos (Stripe / Wompi)
-- [ ] Publicación a YouTube
 - [ ] Clonación de voz (ElevenLabs)
 - [ ] Miniaturas automáticas (DALL-E)
 
-**Fase 3:**
+**Pendiente — Fase 3:**
 - [ ] Programa de afiliados
 - [ ] Clips automáticos para redes
 - [ ] Blog SEO automático
@@ -1627,5 +1667,5 @@ ASSEMBLYAI_API_KEY=
 
 ---
 
-*Última actualización: 27 de Marzo de 2026*
+*Última actualización: 27 de Marzo de 2026 — APIs configuradas, módulos YouTube/Viral/KnowledgeBase integrados*
 *Aprobado por: propietario del proyecto*
