@@ -7,6 +7,7 @@ import { VideoAssemblyService } from './video-assembly.service';
 import { ScriptGeneratorService } from './script-generator.service';
 import { DocumentParserService } from './document-parser.service';
 import { AvatarVideoService } from './avatar-video.service';
+import { HeyGenVideoService } from './heygen-video.service';
 
 @Module({
   controllers: [GenerationController],
@@ -18,6 +19,7 @@ import { AvatarVideoService } from './avatar-video.service';
     ScriptGeneratorService,
     DocumentParserService,
     AvatarVideoService,
+    HeyGenVideoService,
   ],
   exports: [GenerationService],
 })

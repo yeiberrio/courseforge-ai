@@ -921,5 +921,711 @@ Modelos implementados:
 
 ---
 
+## 14. HeyGen — Generación avanzada de avatar IA
+
+> **Nota:** HeyGen se agrega como segundo proveedor de avatar junto a D-ID, ofreciendo
+> funcionalidades más avanzadas de personalización y calidad de video.
+
+### 14.1 ¿Por qué HeyGen además de D-ID?
+
+| Característica | D-ID (actual) | HeyGen (nuevo) |
+|---|---|---|
+| Calidad lip-sync | Buena | Superior (más natural) |
+| Avatares stock | ~5 básicos | 100+ avatares diversos |
+| Avatar personalizado | No | Sí (Instant Avatar desde foto/video) |
+| Plantillas de escena | No | Sí (fondos, layouts, overlays) |
+| Multilenguaje | Limitado | 40+ idiomas con lip-sync nativo |
+| Modo presentación | No | Sí (avatar + slides lado a lado) |
+| Interactividad | No | Sí (Interactive Avatar para tutores) |
+| Streaming en tiempo real | No | Sí (avatar en vivo para demos) |
+| API webhooks | Básicos | Completos (status callbacks) |
+| Precio free tier | 5 min/mes | ~3 créditos (equivale a ~3 min) |
+
+### 14.2 Funcionalidades HeyGen a integrar
+
+#### 14.2.1 Selección de avatar avanzada
+```
+Opciones en el paso de configuración del curso:
+
+1. AVATAR STOCK
+   - Catálogo de 100+ avatares HeyGen
+   - Filtros: género, etnia, edad, vestimenta
+   - Preview en tiempo real antes de generar
+   - Categorías: profesional, casual, educativo, corporativo
+
+2. INSTANT AVATAR (avatar personalizado del creador)
+   - El creador sube 1 foto frontal de alta calidad
+   - HeyGen genera avatar personalizado del creador
+   - El avatar habla con lip-sync natural
+   - Ideal para "marca personal" del creador
+
+3. PHOTO AVATAR
+   - Similar a Instant Avatar pero desde múltiples fotos
+   - Mayor precisión facial y expresiones
+   - Requiere: 5 fotos con diferentes ángulos
+
+4. STUDIO AVATAR (premium)
+   - Avatar grabado en estudio virtual
+   - El creador graba 2-5 minutos de video
+   - HeyGen genera avatar hiperrealista
+   - Máxima calidad, usado para cursos premium
+```
+
+#### 14.2.2 Plantillas de escena (Scene Templates)
+```
+Plantillas disponibles para videos de cursos:
+
+1. PRESENTER MODE
+   - Avatar de cuerpo medio + slides al fondo
+   - Transiciones automáticas entre slides
+   - Ideal para: cursos educativos, tutoriales
+
+2. SPLIT SCREEN
+   - Avatar a la izquierda (40%) + slides a la derecha (60%)
+   - Barra de progreso inferior con título del módulo
+   - Ideal para: cursos técnicos con mucho contenido visual
+
+3. PICTURE-IN-PICTURE (PiP)
+   - Slides en pantalla completa
+   - Avatar pequeño en esquina (configurable: BL, BR, TL, TR)
+   - Tamaño avatar configurable: 15%, 20%, 25% del frame
+   - Ideal para: presentaciones con gráficos importantes
+
+4. TALKING HEAD
+   - Avatar en pantalla completa con fondo personalizado
+   - Fondos: oficina, aula, estudio, gradiente, imagen custom
+   - Texto animado overlay para puntos clave
+   - Ideal para: introducciones, conclusiones, módulos narrativos
+
+5. NEWS ANCHOR
+   - Layout estilo noticiero/reportaje
+   - Avatar centrado + banner inferior con título
+   - Transiciones tipo broadcast
+   - Ideal para: cursos de noticias, actualidad
+
+6. WHITEBOARD
+   - Avatar al costado + pizarra virtual animada
+   - Puntos clave aparecen como escritura en pizarra
+   - Ideal para: cursos educativos, explicaciones conceptuales
+```
+
+#### 14.2.3 Personalización de voz en HeyGen
+```
+Opciones de voz (complementan Edge TTS existente):
+
+1. VOCES NATIVAS HEYGEN
+   - 300+ voces en 40+ idiomas
+   - Selección por idioma, género, estilo (narración, conversacional, energético)
+   - Preview antes de generar
+
+2. VOICE CLONE (HeyGen)
+   - Clonar voz del creador con ~2 minutos de audio
+   - Mayor naturalidad que voces genéricas
+   - Vinculado al perfil del creador
+
+3. EMOCIÓN Y ÉNFASIS
+   - Configurar tono emocional: neutral, entusiasta, serio, cálido
+   - Velocidad de habla: 0.75x a 1.5x
+   - Pausas automáticas entre secciones
+```
+
+#### 14.2.4 Interactive Avatar (para tutor IA en tiempo real)
+```
+Funcionalidad futura (Fase 3):
+- Avatar interactivo en el player de video
+- El estudiante habla o escribe una pregunta
+- El avatar del tutor responde en tiempo real con lip-sync
+- Conectado al sistema RAG del curso
+- Endpoint: POST /api/v1/interactive-avatar/session
+- WebSocket para comunicación bidireccional
+```
+
+### 14.3 Modelo de datos — extensión para HeyGen
+
+```sql
+-- Agregar al modelo generation_configs / GenerationConfig en Prisma:
+-- avatar_provider ahora incluye 'heygen' como opción
+-- Nuevos campos:
+
+heygen_config jsonb DEFAULT '{}',
+-- Estructura del JSON:
+-- {
+--   "avatar_type": "stock" | "instant" | "photo" | "studio",
+--   "avatar_id": "string",           -- ID del avatar en HeyGen
+--   "scene_template": "presenter" | "split_screen" | "pip" | "talking_head" | "news_anchor" | "whiteboard",
+--   "pip_position": "bottom_right" | "bottom_left" | "top_right" | "top_left",
+--   "pip_size": 20,                  -- porcentaje del frame
+--   "background": "office" | "classroom" | "studio" | "gradient" | "custom",
+--   "background_custom_url": "string",
+--   "voice_source": "heygen" | "edge_tts" | "clone",
+--   "heygen_voice_id": "string",
+--   "emotion": "neutral" | "enthusiastic" | "serious" | "warm",
+--   "speed": 1.0,
+--   "webhook_url": "string"
+-- }
+```
+
+### 14.4 Endpoints HeyGen
+
+```
+POST   /api/v1/generation/heygen/avatars          → Lista avatares stock disponibles
+POST   /api/v1/generation/heygen/instant-avatar    → Crear avatar desde foto del creador
+GET    /api/v1/generation/heygen/templates          → Lista plantillas de escena
+POST   /api/v1/generation/heygen/preview            → Generar preview de 15 seg con configuración
+POST   /api/v1/generation/heygen/voice-clone        → Clonar voz del creador en HeyGen
+GET    /api/v1/generation/heygen/voices              → Lista voces disponibles por idioma
+POST   /api/v1/generation/heygen/generate            → Generar video completo de módulo
+GET    /api/v1/generation/heygen/status/:videoId     → Consultar estado de generación
+POST   /api/v1/generation/heygen/webhook             → Callback de HeyGen al completar video
+```
+
+### 14.5 Variables de entorno HeyGen
+
+```bash
+HEYGEN_API_KEY=           # API Key de la cuenta gratuita/pago
+HEYGEN_WEBHOOK_SECRET=    # Secret para verificar webhooks
+HEYGEN_CALLBACK_URL=      # URL pública para recibir callbacks
+```
+
+---
+
+## 15. YouTube — Publicación automática y descubrimiento de contenido viral
+
+### 15.1 Publicación automática de cursos a YouTube
+
+#### 15.1.1 Flujo de publicación
+```
+1. CONEXIÓN DE CANAL
+   - Creador conecta su cuenta de Google/YouTube via OAuth2
+   - Se almacena refresh_token encriptado en DB
+   - Se obtiene channel_id del canal principal
+   - Puede conectar múltiples canales
+
+2. CONFIGURACIÓN DE PUBLICACIÓN (tras aprobar módulos)
+   - Seleccionar canal de YouTube destino
+   - Privacidad: public | unlisted | private
+   - Playlist: crear nueva o agregar a existente
+   - Programar fecha/hora de publicación (o inmediata)
+   - SEO automático: Claude genera title, description, tags optimizados
+   - Miniatura: usar la generada o subir custom
+   - Categoría de YouTube: Education, Science & Technology, News, etc.
+   - Subtítulos: generar .srt automático desde el guión
+   - End screen: enlace al siguiente módulo del curso
+   - Cards: enlace a la plataforma para comprar curso completo
+
+3. UPLOAD AUTOMÁTICO (Publisher Worker)
+   - YouTube Data API v3: videos.insert con resumable upload
+   - Upload por módulo o como video único (todos los módulos concatenados)
+   - Metadata: título, descripción con timestamps, tags, categoría
+   - Thumbnail: thumbnails.set con imagen generada
+   - Playlist: playlistItems.insert para agregar a playlist
+   - Subtítulos: captions.insert con archivo .srt
+   - Notificación al creador al completar
+
+4. POST-PUBLICACIÓN
+   - Monitoreo de analytics básico (views, likes) via YouTube Analytics API
+   - Almacenar video_id de YouTube en publication_schedules.results
+   - Enlace directo al video en el dashboard del creador
+   - Opción de actualizar metadata después de publicar
+```
+
+#### 15.1.2 Modelo de datos — YouTube
+
+```sql
+-- Nueva tabla
+youtube_channels (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  channel_id TEXT NOT NULL,           -- YouTube channel ID
+  channel_title TEXT,
+  channel_thumbnail TEXT,
+  access_token_encrypted TEXT,        -- Encriptado AES-256
+  refresh_token_encrypted TEXT,       -- Encriptado AES-256
+  token_expiry TIMESTAMP,
+  scopes TEXT[],                      -- ['youtube.upload', 'youtube.readonly', ...]
+  is_active BOOLEAN DEFAULT true,
+  connected_at TIMESTAMP DEFAULT now(),
+  last_used_at TIMESTAMP
+)
+
+-- Nueva tabla
+youtube_publications (
+  id UUID PRIMARY KEY,
+  course_id UUID REFERENCES courses(id),
+  module_id UUID REFERENCES course_modules(id) NULL,  -- NULL si es curso completo
+  channel_id UUID REFERENCES youtube_channels(id),
+  youtube_video_id TEXT,              -- ID del video en YouTube
+  youtube_url TEXT,                   -- URL directa
+  privacy TEXT DEFAULT 'unlisted',    -- public | unlisted | private
+  scheduled_at TIMESTAMP,
+  published_at TIMESTAMP,
+  playlist_id TEXT,
+  status TEXT DEFAULT 'pending',      -- pending | uploading | processing | published | failed
+  metadata jsonb,                     -- título, descripción, tags usados
+  analytics jsonb,                    -- views, likes, comments (actualizado periódicamente)
+  error_log TEXT,
+  created_at TIMESTAMP DEFAULT now()
+)
+```
+
+#### 15.1.3 Endpoints YouTube
+
+```
+GET    /api/v1/youtube/auth-url                    → Genera URL OAuth2 para conectar canal
+GET    /api/v1/youtube/callback                    → Callback OAuth2, guarda tokens
+GET    /api/v1/youtube/channels                    → Lista canales conectados del usuario
+DELETE /api/v1/youtube/channels/:id                → Desconectar canal
+POST   /api/v1/youtube/publish                     → Publicar video(s) en YouTube
+GET    /api/v1/youtube/publications/:courseId       → Estado de publicaciones del curso
+PUT    /api/v1/youtube/publications/:id/metadata    → Actualizar metadata post-publicación
+GET    /api/v1/youtube/analytics/:videoId           → Analytics básicos del video
+```
+
+### 15.2 Descubrimiento de contenido viral en YouTube
+
+> **Objetivo:** Buscar videos virales en YouTube sobre temas religiosos, educativos y noticias,
+> extraer contenido de forma inteligente, y generar material original para creación de cursos.
+> Todo respetando derechos de autor — nunca copia literal.
+
+#### 15.2.1 Flujo de descubrimiento de contenido viral
+```
+1. BÚSQUEDA DE VIDEOS VIRALES
+   - El sistema busca videos en YouTube usando la API Search
+   - Filtros aplicados:
+     * Categorías: religiosos, educativos, noticias (configurable)
+     * Mínimo 100,000 vistas O mínimo 5,000 likes
+     * Publicados en los últimos 30 días (configurable: 7d, 30d, 90d, 1 año)
+     * Idioma: español (configurable)
+     * Duración: 5-60 minutos (configurable)
+     * Ordenar por: relevance, viewCount, rating
+   - UI muestra cards con: thumbnail, título, canal, vistas, likes, duración
+   - El creador puede marcar videos como "interesantes" para procesar
+
+2. TRANSCRIPCIÓN INTELIGENTE
+   - Obtener subtítulos/transcripción del video seleccionado:
+     * Opción A: YouTube Captions API (si el video tiene subtítulos)
+     * Opción B: Descargar audio y transcribir con Whisper API (OpenAI)
+     * Opción C: Transcripción por assembly.ai como alternativa
+   - La transcripción RAW se almacena temporalmente (no se expone)
+
+3. PROCESAMIENTO INTELIGENTE (Claude API)
+   - Claude recibe la transcripción y genera contenido ORIGINAL:
+     * Identifica temas principales y subtemas
+     * Extrae datos, estadísticas y hechos verificables
+     * Reformula COMPLETAMENTE el contenido (no parafrasea, sino crea nuevo)
+     * Agrega perspectivas adicionales no cubiertas en el video original
+     * Estructura como material de curso educativo
+   - IMPORTANTE: El contenido generado es ORIGINAL e INDEPENDIENTE:
+     * No usa las mismas frases ni estructura del video fuente
+     * Agrega valor con información complementaria de la base de conocimiento
+     * Cita fuentes externas verificables, no el video original
+     * Cumple con fair use / uso legítimo de información factual
+
+4. OPCIONES DE EXTENSIÓN/REDUCCIÓN
+   - El creador elige la extensión del contenido generado:
+     * EXTENSO (30-60 min de curso): Análisis profundo, múltiples módulos,
+       ejemplos adicionales, ejercicios, contexto histórico
+     * MEDIO (15-30 min): Contenido principal bien desarrollado,
+       2-3 módulos, ejemplos clave
+     * REDUCIDO (5-15 min): Resumen ejecutivo, 1-2 módulos,
+       solo los puntos más importantes
+     * MICRO (1-5 min): Formato short/reel, 1 punto clave con impacto
+   - Claude ajusta la profundidad y estructura según la opción elegida
+   - Preview del documento generado antes de pasar a creación de curso
+
+5. GENERACIÓN DEL DOCUMENTO DE CURSO
+   - Claude genera un documento estructurado con:
+     * Título atractivo y SEO-friendly
+     * Descripción del curso
+     * Objetivos de aprendizaje
+     * Módulos con contenido completo para narración
+     * Puntos clave por módulo
+     * Preguntas de reflexión o ejercicios
+   - El documento se guarda como borrador editable
+   - El creador puede modificar antes de proceder
+
+6. CONEXIÓN CON PIPELINE DE GENERACIÓN EXISTENTE
+   - El documento generado alimenta el flujo actual (Sección 13.6):
+     * Paso 2: Configurar (voz, avatar D-ID/HeyGen, slides, duración)
+     * Paso 3: Generación automática de video
+     * Paso 4: Revisión y aprobación
+   - Tras aprobación: publicación en YouTube + almacenamiento en RAG
+```
+
+#### 15.2.2 Categorías de búsqueda viral
+
+```
+RELIGIOSOS:
+  - Palabras clave: biblia, torah, evangelio, predica, sermón, reflexión espiritual,
+    enseñanza bíblica, parábola, salmos, profecía, estudio bíblico, fe,
+    cristianismo, judaísmo, espiritualidad, devocional
+  - YouTube categories: Education, People & Blogs, Nonprofits & Activism
+
+EDUCATIVOS:
+  - Palabras clave: curso, tutorial, clase, aprende, explicación, cómo funciona,
+    ciencia, historia, matemáticas, programación, idiomas, filosofía,
+    psicología, economía, finanzas personales, productividad
+  - YouTube categories: Education, Science & Technology, Howto & Style
+
+NOTICIAS:
+  - Palabras clave: noticias hoy, última hora, análisis, opinión, debate,
+    actualidad, reportaje, investigación, política, economía mundial,
+    tecnología, cambio climático, sociedad
+  - YouTube categories: News & Politics, Science & Technology
+```
+
+#### 15.2.3 Modelo de datos — Descubrimiento viral
+
+```sql
+-- Búsquedas realizadas
+viral_searches (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  category TEXT NOT NULL,             -- 'religious' | 'educational' | 'news'
+  keywords TEXT[],                    -- Palabras clave usadas
+  min_views INTEGER DEFAULT 100000,
+  min_likes INTEGER DEFAULT 5000,
+  date_range TEXT DEFAULT '30d',
+  language TEXT DEFAULT 'es',
+  results_count INTEGER,
+  created_at TIMESTAMP DEFAULT now()
+)
+
+-- Videos virales encontrados y seleccionados
+viral_videos (
+  id UUID PRIMARY KEY,
+  search_id UUID REFERENCES viral_searches(id),
+  youtube_video_id TEXT NOT NULL,
+  title TEXT,
+  channel_name TEXT,
+  channel_id TEXT,
+  thumbnail_url TEXT,
+  view_count BIGINT,
+  like_count INTEGER,
+  comment_count INTEGER,
+  duration_seconds INTEGER,
+  published_at TIMESTAMP,
+  category TEXT,                      -- religious | educational | news
+  is_selected BOOLEAN DEFAULT false,  -- Marcado por el creador
+  transcription_status TEXT DEFAULT 'none', -- none | processing | done | failed
+  created_at TIMESTAMP DEFAULT now()
+)
+
+-- Transcripciones y contenido procesado
+viral_content_processing (
+  id UUID PRIMARY KEY,
+  viral_video_id UUID REFERENCES viral_videos(id),
+  user_id UUID REFERENCES users(id),
+  raw_transcription TEXT,             -- Transcripción original (temporal, se borra en 24h)
+  processed_content TEXT,             -- Contenido original generado por Claude
+  content_length TEXT,                -- 'extensive' | 'medium' | 'reduced' | 'micro'
+  target_duration_minutes INTEGER,
+  topics_extracted jsonb,             -- Temas identificados
+  key_facts jsonb,                    -- Datos y hechos extraídos
+  generated_document jsonb,           -- Documento de curso estructurado
+  -- { title, description, objectives, modules: [{title, content, key_points}] }
+  status TEXT DEFAULT 'pending',      -- pending | transcribing | processing | ready | used
+  course_id UUID REFERENCES courses(id) NULL, -- Curso creado a partir de este contenido
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP
+)
+```
+
+#### 15.2.4 Endpoints — Descubrimiento viral
+
+```
+POST   /api/v1/viral/search                        → Buscar videos virales con filtros
+GET    /api/v1/viral/search/:id/results             → Resultados de una búsqueda
+POST   /api/v1/viral/videos/:id/select              → Marcar video como interesante
+POST   /api/v1/viral/videos/:id/transcribe          → Iniciar transcripción del video
+GET    /api/v1/viral/videos/:id/transcription        → Estado/resultado de transcripción
+POST   /api/v1/viral/process                        → Procesar transcripción → contenido original
+PUT    /api/v1/viral/process/:id/length              → Cambiar extensión (extenso/medio/reducido/micro)
+GET    /api/v1/viral/process/:id/preview             → Preview del documento generado
+POST   /api/v1/viral/process/:id/create-course       → Crear curso desde contenido procesado
+GET    /api/v1/viral/trending                        → Top 10 videos virales del día por categoría
+GET    /api/v1/viral/history                         → Historial de búsquedas del usuario
+```
+
+#### 15.2.5 Prompt de procesamiento inteligente (Claude)
+
+```
+SYSTEM PROMPT para procesamiento de contenido viral:
+
+Eres un experto en diseño instruccional y creación de contenido educativo original.
+Se te proporcionará información factual extraída de una fuente de video.
+Tu tarea es crear contenido COMPLETAMENTE ORIGINAL para un curso educativo.
+
+REGLAS ESTRICTAS:
+1. NUNCA copies frases, párrafos o estructura del contenido fuente
+2. Usa la información factual como INSPIRACIÓN, no como base para parafrasear
+3. Agrega perspectivas, contexto histórico y análisis que NO estén en la fuente
+4. Cita fuentes académicas, libros o artículos reconocidos (no el video fuente)
+5. Estructura el contenido como material pedagógico profesional
+6. Incluye preguntas de reflexión y ejercicios prácticos
+7. El resultado debe ser autosuficiente: alguien que nunca vio el video
+   fuente debe entender perfectamente el curso
+
+EXTENSIÓN SOLICITADA: {content_length}
+- extensive: 30-60 min narración (~4,500-9,000 palabras), 4-8 módulos
+- medium: 15-30 min narración (~2,250-4,500 palabras), 2-4 módulos
+- reduced: 5-15 min narración (~750-2,250 palabras), 1-2 módulos
+- micro: 1-5 min narración (~150-750 palabras), 1 módulo tipo short
+
+CATEGORÍA: {category} (religious | educational | news)
+IDIOMA: {language}
+
+FORMATO DE SALIDA:
+{
+  "title": "Título atractivo y SEO del curso",
+  "description": "Descripción de 2-3 párrafos",
+  "target_audience": "Público objetivo",
+  "objectives": ["Objetivo 1", "Objetivo 2", ...],
+  "modules": [
+    {
+      "title": "Título del módulo",
+      "content": "Contenido completo para narración",
+      "key_points": ["Punto 1", "Punto 2"],
+      "reflection_questions": ["¿Pregunta 1?"],
+      "additional_resources": ["Recurso sugerido"]
+    }
+  ],
+  "seo_tags": ["tag1", "tag2", ...],
+  "disclaimer": "Este contenido es una creación original con fines educativos..."
+}
+```
+
+### 15.3 Variables de entorno — YouTube
+
+```bash
+# YouTube Data API v3
+YOUTUBE_API_KEY=                    # API Key para búsquedas públicas (viral search)
+YOUTUBE_CLIENT_ID=                  # OAuth2 Client ID (para publicación)
+YOUTUBE_CLIENT_SECRET=              # OAuth2 Client Secret
+YOUTUBE_REDIRECT_URI=               # Callback URL para OAuth2
+
+# Whisper (transcripción, alternativa a captions API)
+OPENAI_API_KEY=                     # Ya existente, se reutiliza para Whisper
+
+# AssemblyAI (alternativa de transcripción)
+ASSEMBLYAI_API_KEY=
+```
+
+---
+
+## 16. Base de conocimiento RAG — Almacenamiento automático de cursos en PDF
+
+> **Objetivo:** Todo curso generado y aprobado se convierte automáticamente en un
+> documento PDF y se ingesta en el sistema RAG, creando una base de conocimiento
+> creciente que alimenta a los agentes IA.
+
+### 16.1 Flujo de almacenamiento automático
+
+```
+1. TRIGGER: Curso pasa a estado APPROVED o PUBLISHED
+
+2. GENERACIÓN DE PDF
+   - Se genera un PDF profesional del curso con:
+     * Portada con título, autor, fecha, categoría
+     * Tabla de contenidos
+     * Contenido completo de cada módulo (guión/narración)
+     * Puntos clave resaltados
+     * Preguntas de reflexión por módulo
+     * Fuentes y recursos adicionales
+     * Metadatos: curso_id, categoría, tags, fecha
+   - Formato: A4, tipografía legible, branding de la plataforma
+   - Almacenado en: /uploads/knowledge-base/{category}/{courseId}.pdf
+
+3. INGESTA RAG AUTOMÁTICA
+   - El PDF se procesa automáticamente:
+     a. Extracción de texto completo
+     b. Chunking inteligente (chunk_size: 512 tokens, overlap: 50)
+     c. Generación de embeddings (text-embedding-3-small)
+     d. Upsert en pgvector con metadata:
+        { course_id, module_id, category, tags, chunk_index, created_at }
+   - Los embeddings se almacenan en la tabla rag_documents
+
+4. ACTUALIZACIÓN INCREMENTAL
+   - Si un curso se actualiza (módulos editados/regenerados):
+     * Se regenera el PDF
+     * Se eliminan embeddings anteriores del curso
+     * Se reingesan los nuevos embeddings
+   - Si un curso se archiva: los embeddings se marcan como inactivos (no se borran)
+
+5. USO POR AGENTES IA
+   - Agente de ventas: busca en toda la base de conocimiento para recomendar cursos
+   - Agente tutor: busca en los PDFs del curso específico + relacionados
+   - Agente de soporte: busca en PDFs + documentación de la plataforma
+   - Al generar nuevos cursos desde viral: busca en la base para no repetir contenido
+```
+
+### 16.2 Modelo de datos — Knowledge Base
+
+```sql
+-- Documentos de la base de conocimiento
+knowledge_base_documents (
+  id UUID PRIMARY KEY,
+  course_id UUID REFERENCES courses(id),
+  title TEXT NOT NULL,
+  category TEXT,
+  tags TEXT[],
+  file_path TEXT NOT NULL,            -- Ruta al PDF generado
+  file_size_bytes INTEGER,
+  page_count INTEGER,
+  chunk_count INTEGER,                -- Número de chunks generados
+  source_type TEXT DEFAULT 'course',  -- 'course' | 'viral_content' | 'manual_upload'
+  viral_video_id UUID REFERENCES viral_videos(id) NULL,
+  is_active BOOLEAN DEFAULT true,
+  ingested_at TIMESTAMP,
+  updated_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT now()
+)
+
+-- Embeddings (extiende la tabla rag_documents existente)
+-- Se agrega referencia a knowledge_base_documents:
+rag_documents (
+  id UUID PRIMARY KEY,
+  knowledge_base_doc_id UUID REFERENCES knowledge_base_documents(id) NULL,
+  agent_config_id UUID NULL,
+  course_id UUID NULL,
+  title TEXT,
+  content_text TEXT,                  -- Texto del chunk
+  embedding vector(1536),            -- Embedding del chunk
+  metadata jsonb,                    -- { module_id, chunk_index, category, source }
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT now()
+)
+```
+
+### 16.3 Endpoints — Knowledge Base
+
+```
+GET    /api/v1/knowledge-base                       → Lista documentos de la base de conocimiento
+GET    /api/v1/knowledge-base/:id                   → Detalle de un documento
+GET    /api/v1/knowledge-base/:id/pdf               → Descargar PDF del documento
+POST   /api/v1/knowledge-base/ingest/:courseId       → Forzar re-ingesta de un curso
+POST   /api/v1/knowledge-base/search                → Búsqueda semántica en la base
+DELETE /api/v1/knowledge-base/:id                   → Desactivar documento (soft delete)
+GET    /api/v1/knowledge-base/stats                  → Estadísticas: total docs, chunks, por categoría
+POST   /api/v1/knowledge-base/upload                 → Subir documento manual a la base (admin)
+```
+
+### 16.4 Búsqueda semántica para generación de cursos
+
+```
+Cuando se genera un curso nuevo (especialmente desde contenido viral):
+
+1. Se busca en la base de conocimiento si ya existe contenido similar
+2. Si existe: se alerta al creador para evitar duplicados
+3. Si no existe: se usa el contexto de la base para enriquecer el nuevo curso
+4. Al completar el curso: se agrega automáticamente a la base
+
+Esto crea un ciclo virtuoso:
+  Contenido viral → Curso original → PDF → RAG → Mejores cursos futuros
+```
+
+---
+
+## 17. Flujo integrado completo — De video viral a curso publicado en YouTube
+
+```
+PASO 1: DESCUBRIMIENTO
+  └─ Creador abre panel "Contenido Viral" en Studio
+  └─ Selecciona categoría(s): religiosos, educativos, noticias
+  └─ Sistema busca videos con 100K+ vistas o 5K+ likes
+  └─ Muestra resultados con métricas y preview
+
+PASO 2: SELECCIÓN Y TRANSCRIPCIÓN
+  └─ Creador selecciona 1 o más videos interesantes
+  └─ Sistema transcribe automáticamente (Captions API o Whisper)
+  └─ Muestra transcripción con opción de ver puntos clave
+
+PASO 3: PROCESAMIENTO INTELIGENTE
+  └─ Claude procesa la transcripción → contenido 100% original
+  └─ Creador elige extensión: extenso / medio / reducido / micro
+  └─ Preview del documento generado con estructura de curso
+  └─ Creador puede editar/ajustar antes de continuar
+
+PASO 4: CONFIGURACIÓN DE GENERACIÓN
+  └─ Seleccionar proveedor de avatar: D-ID / HeyGen (nuevo)
+  └─ Si HeyGen: elegir avatar, plantilla de escena, voz, emoción
+  └─ Si D-ID: flujo existente (5 avatares stock)
+  └─ Configurar voz TTS, estilo de slides, duración
+  └─ Verificar con base de conocimiento que no hay duplicados
+
+PASO 5: GENERACIÓN AUTOMÁTICA
+  └─ Pipeline existente genera el curso:
+     ├─ Guión de narración por módulo
+     ├─ Audio TTS
+     ├─ Slides SVG
+     ├─ Video con avatar (D-ID o HeyGen)
+     └─ Ensamblado final con FFmpeg
+  └─ Progreso en tiempo real en el dashboard
+
+PASO 6: REVISIÓN Y APROBACIÓN
+  └─ Creador revisa cada módulo en el player
+  └─ Puede aprobar, editar guión y regenerar, o rechazar
+  └─ Al aprobar todos los módulos → curso APPROVED
+
+PASO 7: PUBLICACIÓN DUAL
+  └─ Publicar en la plataforma CourseForge (existente)
+  └─ Publicar en YouTube:
+     ├─ Seleccionar canal conectado
+     ├─ Configurar privacidad, playlist, programación
+     ├─ Claude genera título, descripción, tags SEO para YouTube
+     ├─ Upload automático con metadata y miniatura
+     └─ Subtítulos .srt generados desde el guión
+
+PASO 8: ALMACENAMIENTO EN BASE DE CONOCIMIENTO
+  └─ PDF del curso generado automáticamente
+  └─ Ingesta automática en sistema RAG (pgvector)
+  └─ Disponible para agentes IA y búsqueda semántica
+  └─ Enriquece futuros cursos generados
+```
+
+---
+
+## 18. Frontend — Nuevas páginas requeridas
+
+| Página | Ruta | Funcionalidad |
+|---|---|---|
+| Contenido Viral | `/dashboard/viral` | Panel de búsqueda y descubrimiento viral |
+| Resultados Viral | `/dashboard/viral/resultados?searchId=X` | Videos encontrados con métricas |
+| Procesar Video | `/dashboard/viral/procesar?videoId=X` | Transcripción + procesamiento + extensión |
+| Preview Documento | `/dashboard/viral/preview?processId=X` | Preview/editar documento generado |
+| Conectar YouTube | `/dashboard/youtube/conectar` | OAuth2 para conectar canal |
+| Mis Canales | `/dashboard/youtube/canales` | Lista de canales conectados |
+| Publicar YouTube | `/dashboard/youtube/publicar?courseId=X` | Configurar y publicar en YouTube |
+| Publicaciones | `/dashboard/youtube/publicaciones` | Historial de publicaciones + analytics |
+| Base Conocimiento | `/dashboard/conocimiento` | Explorar/buscar en la base RAG |
+| Detalle Doc RAG | `/dashboard/conocimiento/detalle?id=X` | Ver documento + chunks + uso |
+
+---
+
+## 19. Nuevas variables de entorno (resumen)
+
+```bash
+# HeyGen (avatar avanzado)
+HEYGEN_API_KEY=
+HEYGEN_WEBHOOK_SECRET=
+HEYGEN_CALLBACK_URL=
+
+# YouTube (búsqueda + publicación)
+YOUTUBE_API_KEY=
+YOUTUBE_CLIENT_ID=
+YOUTUBE_CLIENT_SECRET=
+YOUTUBE_REDIRECT_URI=
+
+# AssemblyAI (transcripción alternativa)
+ASSEMBLYAI_API_KEY=
+
+# Las siguientes ya existen y se reutilizan:
+# OPENAI_API_KEY (Whisper + embeddings)
+# ANTHROPIC_API_KEY (Claude para procesamiento)
+# DID_API_KEY (avatar alternativo)
+```
+
+---
+
 *Última actualización: 27 de Marzo de 2026*
 *Aprobado por: propietario del proyecto*

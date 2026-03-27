@@ -18,6 +18,12 @@ import {
   Palette,
   Video,
   User,
+  Monitor,
+  Layout,
+  PictureInPicture,
+  Mic,
+  Newspaper,
+  PenTool,
 } from "lucide-react";
 
 const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1").replace("/api/v1", "");
@@ -44,8 +50,30 @@ interface DIDAvatar {
   preview: string;
 }
 
+interface HeyGenAvatar {
+  avatar_id: string;
+  avatar_name: string;
+  gender: string;
+  preview_image_url: string;
+  type: string;
+}
+
+interface HeyGenVoice {
+  voice_id: string;
+  language: string;
+  gender: string;
+  name: string;
+  emotion_support: boolean;
+}
+
+interface SceneTemplate {
+  id: string;
+  name: string;
+  description: string;
+}
+
 type Step = "upload" | "configure" | "generating" | "done";
-type VideoType = "slides" | "avatar";
+type VideoType = "slides" | "avatar" | "heygen";
 
 export default function GenerarCursoPage() {
   const { token } = useAuth();
@@ -71,6 +99,21 @@ export default function GenerarCursoPage() {
   const [avatars, setAvatars] = useState<DIDAvatar[]>([]);
   const [avatarAvailable, setAvatarAvailable] = useState(false);
 
+  // HeyGen config
+  const [heygenAvatars, setHeygenAvatars] = useState<HeyGenAvatar[]>([]);
+  const [heygenAvailable, setHeygenAvailable] = useState(false);
+  const [heygenAvatarId, setHeygenAvatarId] = useState("");
+  const [heygenAvatarType, setHeygenAvatarType] = useState<"stock" | "instant" | "photo">("stock");
+  const [heygenVoices, setHeygenVoices] = useState<HeyGenVoice[]>([]);
+  const [heygenVoiceId, setHeygenVoiceId] = useState("");
+  const [heygenVoiceSource, setHeygenVoiceSource] = useState<"heygen" | "edge_tts">("heygen");
+  const [sceneTemplate, setSceneTemplate] = useState<string>("talking_head");
+  const [sceneTemplates, setSceneTemplates] = useState<SceneTemplate[]>([]);
+  const [pipPosition, setPipPosition] = useState("bottom_right");
+  const [heygenBackground, setHeygenBackground] = useState("studio");
+  const [heygenEmotion, setHeygenEmotion] = useState<string>("neutral");
+  const [heygenSpeed, setHeygenSpeed] = useState(1.0);
+
   // Generation
   const [courseId, setCourseId] = useState("");
   const [progress, setProgress] = useState<GenerationProgress | null>(null);
@@ -84,6 +127,24 @@ export default function GenerarCursoPage() {
         setAvatars(data.avatars);
         if (data.avatars.length > 0) setAvatarId(data.avatars[0].id);
       })
+      .catch(() => {});
+
+    // Load HeyGen data
+    api.get<{ available: boolean; avatars: HeyGenAvatar[] }>("/generation/heygen/avatars", token)
+      .then((data) => {
+        setHeygenAvailable(data.available);
+        setHeygenAvatars(data.avatars);
+        if (data.avatars.length > 0) setHeygenAvatarId(data.avatars[0].avatar_id);
+      })
+      .catch(() => {});
+    api.get<{ voices: HeyGenVoice[] }>("/generation/heygen/voices?language=es", token)
+      .then((data) => {
+        setHeygenVoices(data.voices);
+        if (data.voices.length > 0) setHeygenVoiceId(data.voices[0].voice_id);
+      })
+      .catch(() => {});
+    api.get<{ templates: SceneTemplate[] }>("/generation/heygen/templates", token)
+      .then((data) => setSceneTemplates(data.templates))
       .catch(() => {});
   }, [token]);
 
@@ -139,11 +200,26 @@ export default function GenerarCursoPage() {
         {
           filePath,
           categoryId,
-          voice,
+          voice: videoType === "heygen" && heygenVoiceSource === "heygen" ? undefined : voice,
           slideStyle,
           targetDurationMin: targetDuration,
           videoType,
           ...(videoType === "avatar" && avatarId ? { avatarId } : {}),
+          ...(videoType === "heygen"
+            ? {
+                heygenConfig: {
+                  avatarType: heygenAvatarType,
+                  avatarId: heygenAvatarId,
+                  sceneTemplate,
+                  pipPosition: sceneTemplate === "pip" ? pipPosition : undefined,
+                  background: heygenBackground,
+                  voiceSource: heygenVoiceSource,
+                  heygenVoiceId: heygenVoiceSource === "heygen" ? heygenVoiceId : undefined,
+                  emotion: heygenEmotion,
+                  speed: heygenSpeed,
+                },
+              }
+            : {}),
         },
         token
       );
@@ -346,7 +422,7 @@ export default function GenerarCursoPage() {
                 <label className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-700">
                   <Video className="h-4 w-4" /> Tipo de video
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <button
                     type="button"
                     onClick={() => setVideoType("slides")}
@@ -371,19 +447,35 @@ export default function GenerarCursoPage() {
                     disabled={!avatarAvailable}
                   >
                     <User className="mx-auto mb-2 h-8 w-8 text-indigo-600" />
-                    <p className="text-sm font-medium text-gray-900">Avatar IA</p>
+                    <p className="text-sm font-medium text-gray-900">Avatar D-ID</p>
                     <p className="text-xs text-gray-500">
-                      {avatarAvailable ? "Persona IA hablando" : "Requiere API Key D-ID"}
+                      {avatarAvailable ? "Avatar básico" : "Requiere API Key D-ID"}
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVideoType("heygen")}
+                    className={`rounded-lg border-2 p-4 text-center transition ${
+                      videoType === "heygen"
+                        ? "border-purple-600 bg-purple-50 ring-2 ring-purple-200"
+                        : "border-gray-200 hover:border-gray-300"
+                    } ${!heygenAvailable ? "opacity-50" : ""}`}
+                    disabled={!heygenAvailable}
+                  >
+                    <Monitor className="mx-auto mb-2 h-8 w-8 text-purple-600" />
+                    <p className="text-sm font-medium text-gray-900">HeyGen</p>
+                    <p className="text-xs text-gray-500">
+                      {heygenAvailable ? "Avatar avanzado + escenas" : "Requiere API Key HeyGen"}
                     </p>
                   </button>
                 </div>
               </div>
 
-              {/* Avatar Selection (only if avatar mode) */}
+              {/* D-ID Avatar Selection */}
               {videoType === "avatar" && avatars.length > 0 && (
                 <div>
                   <label className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-700">
-                    <User className="h-4 w-4" /> Seleccionar avatar
+                    <User className="h-4 w-4" /> Seleccionar avatar D-ID
                   </label>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {avatars.map((av) => (
@@ -401,6 +493,189 @@ export default function GenerarCursoPage() {
                         <p className="text-xs text-gray-500">{av.preview}</p>
                       </button>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* HeyGen Configuration */}
+              {videoType === "heygen" && (
+                <div className="space-y-4 rounded-lg border-2 border-purple-200 bg-purple-50/50 p-4">
+                  <h4 className="flex items-center gap-2 text-sm font-semibold text-purple-800">
+                    <Monitor className="h-4 w-4" /> Configuración HeyGen
+                  </h4>
+
+                  {/* HeyGen Avatar Selection */}
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Avatar</label>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {heygenAvatars.map((av) => (
+                        <button
+                          key={av.avatar_id}
+                          type="button"
+                          onClick={() => {
+                            setHeygenAvatarId(av.avatar_id);
+                            setHeygenAvatarType(av.type as "stock" | "instant" | "photo");
+                          }}
+                          className={`rounded-lg border-2 p-2 text-center text-xs transition ${
+                            heygenAvatarId === av.avatar_id
+                              ? "border-purple-600 bg-purple-100 ring-2 ring-purple-200"
+                              : "border-gray-200 bg-white hover:border-gray-300"
+                          }`}
+                        >
+                          {av.preview_image_url && (
+                            <img
+                              src={av.preview_image_url}
+                              alt={av.avatar_name}
+                              className="mx-auto mb-1 h-16 w-16 rounded-full object-cover"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                          )}
+                          <p className="font-medium text-gray-900">{av.avatar_name}</p>
+                          <p className="text-gray-500">{av.gender} - {av.type}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Scene Template */}
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Plantilla de escena</label>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {sceneTemplates.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setSceneTemplate(t.id)}
+                          className={`rounded-lg border-2 p-3 text-left text-xs transition ${
+                            sceneTemplate === t.id
+                              ? "border-purple-600 bg-purple-100 ring-1 ring-purple-200"
+                              : "border-gray-200 bg-white hover:border-gray-300"
+                          }`}
+                        >
+                          <p className="font-medium text-gray-900">{t.name}</p>
+                          <p className="mt-0.5 text-gray-500">{t.description}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* PiP Position (only for pip template) */}
+                  {sceneTemplate === "pip" && (
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700">Posición del avatar</label>
+                      <select
+                        value={pipPosition}
+                        onChange={(e) => setPipPosition(e.target.value)}
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                      >
+                        <option value="bottom_right">Abajo derecha</option>
+                        <option value="bottom_left">Abajo izquierda</option>
+                        <option value="top_right">Arriba derecha</option>
+                        <option value="top_left">Arriba izquierda</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Voice Source */}
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Fuente de voz</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setHeygenVoiceSource("heygen")}
+                        className={`rounded-lg border-2 p-3 text-center text-sm transition ${
+                          heygenVoiceSource === "heygen"
+                            ? "border-purple-600 bg-purple-100"
+                            : "border-gray-200 bg-white"
+                        }`}
+                      >
+                        <Mic className="mx-auto mb-1 h-5 w-5 text-purple-600" />
+                        <p className="font-medium">Voces HeyGen</p>
+                        <p className="text-xs text-gray-500">300+ voces nativas</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHeygenVoiceSource("edge_tts")}
+                        className={`rounded-lg border-2 p-3 text-center text-sm transition ${
+                          heygenVoiceSource === "edge_tts"
+                            ? "border-purple-600 bg-purple-100"
+                            : "border-gray-200 bg-white"
+                        }`}
+                      >
+                        <Volume2 className="mx-auto mb-1 h-5 w-5 text-purple-600" />
+                        <p className="font-medium">Edge TTS</p>
+                        <p className="text-xs text-gray-500">Microsoft (gratis)</p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* HeyGen Voice Selection */}
+                  {heygenVoiceSource === "heygen" && heygenVoices.length > 0 && (
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700">Voz HeyGen</label>
+                      <select
+                        value={heygenVoiceId}
+                        onChange={(e) => setHeygenVoiceId(e.target.value)}
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                      >
+                        {heygenVoices.map((v) => (
+                          <option key={v.voice_id} value={v.voice_id}>
+                            {v.name} ({v.language}, {v.gender})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Background */}
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Fondo</label>
+                    <select
+                      value={heygenBackground}
+                      onChange={(e) => setHeygenBackground(e.target.value)}
+                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                    >
+                      <option value="studio">Estudio (oscuro)</option>
+                      <option value="office">Oficina</option>
+                      <option value="classroom">Aula</option>
+                      <option value="gradient">Gradiente</option>
+                      <option value="white">Blanco</option>
+                    </select>
+                  </div>
+
+                  {/* Emotion & Speed */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700">Emoción</label>
+                      <select
+                        value={heygenEmotion}
+                        onChange={(e) => setHeygenEmotion(e.target.value)}
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                      >
+                        <option value="neutral">Neutral</option>
+                        <option value="enthusiastic">Entusiasta</option>
+                        <option value="serious">Serio</option>
+                        <option value="warm">Cálido</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700">
+                        Velocidad: {heygenSpeed}x
+                      </label>
+                      <input
+                        type="range"
+                        min={0.75}
+                        max={1.5}
+                        step={0.05}
+                        value={heygenSpeed}
+                        onChange={(e) => setHeygenSpeed(parseFloat(e.target.value))}
+                        className="w-full accent-purple-600"
+                      />
+                      <div className="flex justify-between text-xs text-gray-400">
+                        <span>0.75x</span>
+                        <span>1.5x</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

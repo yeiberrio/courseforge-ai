@@ -10,6 +10,9 @@ import { CourseModulesModule } from './course-modules/course-modules.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { GenerationModule } from './generation/generation.module';
+import { YouTubeModule } from './youtube/youtube.module';
+import { ViralModule } from './viral/viral.module';
+import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
 
 @Controller('health')
 class HealthController {
@@ -34,6 +37,9 @@ class HealthController {
     EnrollmentsModule,
     UploadsModule,
     GenerationModule,
+    YouTubeModule,
+    ViralModule,
+    KnowledgeBaseModule,
   ],
 })
 export class AppModule {}

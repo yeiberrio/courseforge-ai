@@ -101,6 +101,54 @@ enum HeatmapEventType {
   EXIT
 }
 
+enum YouTubePrivacy {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
+enum YouTubePublicationStatus {
+  PENDING
+  UPLOADING
+  PROCESSING
+  PUBLISHED
+  FAILED
+}
+
+enum ViralCategory {
+  RELIGIOUS
+  EDUCATIONAL
+  NEWS
+}
+
+enum ViralTranscriptionStatus {
+  NONE
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum ViralProcessingStatus {
+  PENDING
+  TRANSCRIBING
+  PROCESSING
+  READY
+  USED
+}
+
+enum ContentLength {
+  EXTENSIVE
+  MEDIUM
+  REDUCED
+  MICRO
+}
+
+enum KBSourceType {
+  COURSE
+  VIRAL_CONTENT
+  MANUAL_UPLOAD
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -116,13 +164,16 @@ model User {
   updated_at    DateTime @updatedAt
   deleted_at    DateTime?
 
-  creator_profile    CreatorProfile?
-  student_profile    StudentProfile?
-  courses            Course[]
-  purchases          Purchase[]
-  enrollments        Enrollment[]
-  chat_sessions      ChatSession[]
-  affiliate_links    AffiliateLink[]
+  creator_profile        CreatorProfile?
+  student_profile        StudentProfile?
+  courses                Course[]
+  purchases              Purchase[]
+  enrollments            Enrollment[]
+  chat_sessions          ChatSession[]
+  affiliate_links        AffiliateLink[]
+  youtube_channels       YouTubeChannel[]
+  viral_searches         ViralSearch[]
+  viral_content_processing ViralContentProcessing[]
 
   @@map("users")
 }
@@ -200,6 +251,9 @@ model Course {
   enrollments          Enrollment[]
   affiliate_links      AffiliateLink[]
   analytics            CourseAnalytics[]
+  youtube_publications YouTubePublication[]
+  viral_content_processing ViralContentProcessing[]
+  knowledge_base_docs  KnowledgeBaseDocument[]
 
   @@index([creator_id])
   @@index([category_id])
@@ -272,6 +326,7 @@ model GenerationConfig {
   language                      String         @default("es")
   target_duration_per_module_min Int?
   thumbnail_style               String?
+  heygen_config                 Json?
   created_at                    DateTime       @default(now())
 
   course Course @relation(fields: [course_id], references: [id])
@@ -480,4 +535,150 @@ model VideoHeatmapEvent {
 
   @@index([module_id])
   @@map("video_heatmap_events")
+}
+
+// ─── YouTube ─────────────────────────────────────────────────────────────────
+
+model YouTubeChannel {
+  id                      String   @id @default(uuid())
+  user_id                 String
+  channel_id              String
+  channel_title           String?
+  channel_thumbnail       String?
+  access_token_encrypted  String?
+  refresh_token_encrypted String?
+  token_expiry            DateTime?
+  scopes                  String[]
+  is_active               Boolean  @default(true)
+  connected_at            DateTime @default(now())
+  last_used_at            DateTime?
+
+  user         User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  publications YouTubePublication[]
+
+  @@index([user_id])
+  @@map("youtube_channels")
+}
+
+model YouTubePublication {
+  id               String                   @id @default(uuid())
+  course_id        String
+  module_id        String?
+  channel_id       String
+  youtube_video_id String?
+  youtube_url      String?
+  privacy          YouTubePrivacy           @default(UNLISTED)
+  scheduled_at     DateTime?
+  published_at     DateTime?
+  playlist_id      String?
+  status           YouTubePublicationStatus @default(PENDING)
+  metadata         Json?
+  analytics        Json?
+  error_log        String?
+  created_at       DateTime                 @default(now())
+
+  course  Course         @relation(fields: [course_id], references: [id])
+  channel YouTubeChannel @relation(fields: [channel_id], references: [id])
+
+  @@index([course_id])
+  @@index([channel_id])
+  @@map("youtube_publications")
+}
+
+// ─── Viral Content Discovery ─────────────────────────────────────────────────
+
+model ViralSearch {
+  id            String        @id @default(uuid())
+  user_id       String
+  category      ViralCategory
+  keywords      String[]
+  min_views     Int           @default(100000)
+  min_likes     Int           @default(5000)
+  date_range    String        @default("30d")
+  language      String        @default("es")
+  results_count Int           @default(0)
+  created_at    DateTime      @default(now())
+
+  user   User         @relation(fields: [user_id], references: [id])
+  videos ViralVideo[]
+
+  @@index([user_id])
+  @@map("viral_searches")
+}
+
+model ViralVideo {
+  id                    String                   @id @default(uuid())
+  search_id             String
+  youtube_video_id      String
+  title                 String?
+  channel_name          String?
+  channel_id            String?
+  thumbnail_url         String?
+  view_count            BigInt                   @default(0)
+  like_count            Int                      @default(0)
+  comment_count         Int                      @default(0)
+  duration_seconds      Int                      @default(0)
+  published_at          DateTime?
+  category              ViralCategory
+  is_selected           Boolean                  @default(false)
+  transcription_status  ViralTranscriptionStatus @default(NONE)
+  created_at            DateTime                 @default(now())
+
+  search     ViralSearch              @relation(fields: [search_id], references: [id], onDelete: Cascade)
+  processing ViralContentProcessing[]
+
+  @@index([search_id])
+  @@index([youtube_video_id])
+  @@map("viral_videos")
+}
+
+model ViralContentProcessing {
+  id                    String                @id @default(uuid())
+  viral_video_id        String
+  user_id               String
+  raw_transcription     String?
+  processed_content     String?
+  content_length        ContentLength         @default(MEDIUM)
+  target_duration_minutes Int?
+  topics_extracted      Json?
+  key_facts             Json?
+  generated_document    Json?
+  status                ViralProcessingStatus @default(PENDING)
+  course_id             String?
+  created_at            DateTime              @default(now())
+  updated_at            DateTime              @updatedAt
+
+  viral_video ViralVideo @relation(fields: [viral_video_id], references: [id])
+  user        User       @relation(fields: [user_id], references: [id])
+  course      Course?    @relation(fields: [course_id], references: [id])
+
+  @@index([viral_video_id])
+  @@index([user_id])
+  @@map("viral_content_processing")
+}
+
+// ─── Knowledge Base (RAG) ────────────────────────────────────────────────────
+
+model KnowledgeBaseDocument {
+  id              String       @id @default(uuid())
+  course_id       String?
+  title           String
+  category        String?
+  tags            String[]
+  file_path       String
+  file_size_bytes Int?
+  page_count      Int?
+  chunk_count     Int?
+  source_type     KBSourceType @default(COURSE)
+  viral_video_id  String?
+  is_active       Boolean      @default(true)
+  ingested_at     DateTime?
+  updated_at      DateTime     @updatedAt
+  created_at      DateTime     @default(now())
+
+  course Course? @relation(fields: [course_id], references: [id])
+
+  @@index([course_id])
+  @@index([source_type])
+  @@map("knowledge_base_documents")
 }

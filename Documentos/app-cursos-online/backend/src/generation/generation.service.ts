@@ -5,11 +5,13 @@ import { TtsService } from './tts.service';
 import { SlideService, SlideData } from './slide.service';
 import { VideoAssemblyService } from './video-assembly.service';
 import { AvatarVideoService } from './avatar-video.service';
+import { HeyGenVideoService } from './heygen-video.service';
 import { DocumentParserService } from './document-parser.service';
+import { HeyGenConfigDto } from './dto/generate-course.dto';
 import { mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 
-export type VideoType = 'slides' | 'avatar';
+export type VideoType = 'slides' | 'avatar' | 'heygen';
 
 export interface GenerationProgress {
   courseId: string;
@@ -31,6 +33,7 @@ export class GenerationService {
     private slides: SlideService,
     private videoAssembly: VideoAssemblyService,
     private avatarVideo: AvatarVideoService,
+    private heygenVideo: HeyGenVideoService,
     private documentParser: DocumentParserService,
   ) {}
 
@@ -65,6 +68,7 @@ export class GenerationService {
     targetDurationMin: number = 5,
     videoType: VideoType = 'slides',
     avatarId?: string,
+    heygenConfig?: HeyGenConfigDto,
   ) {
     // 1. Analyze document
     const fullPath = join(process.cwd(), filePath);
@@ -108,7 +112,7 @@ export class GenerationService {
     }
 
     // 4. Start generation in background
-    this.generateCourseContent(course.id, text, structure, voice, slideStyle, targetDurationMin, videoType, avatarId)
+    this.generateCourseContent(course.id, text, structure, voice, slideStyle, targetDurationMin, videoType, avatarId, heygenConfig)
       .catch((error) => {
         this.logger.error(`Generation failed for course ${course.id}: ${error.message}`);
         this.updateProgress(course.id, 'failed', 0, 0, error.message);
@@ -133,6 +137,7 @@ export class GenerationService {
     targetDurationMin: number,
     videoType: VideoType = 'slides',
     avatarId?: string,
+    heygenConfig?: HeyGenConfigDto,
   ) {
     const modules = await this.prisma.courseModule.findMany({
       where: { course_id: courseId },
@@ -193,18 +198,38 @@ export class GenerationService {
         }));
         await this.slides.generateSlides(slidesData, slidesDir, slideStyle);
 
-        // Assemble video (slides mode or avatar mode)
-        this.updateProgress(courseId, 'assembling_video', i + 1, totalModules,
-          videoType === 'avatar'
-            ? `Generando avatar IA: ${mod.title}`
-            : `Ensamblando video: ${mod.title}`,
-        );
+        // Assemble video (slides, D-ID avatar, or HeyGen avatar mode)
+        const videoLabel =
+          videoType === 'heygen' ? `Generando avatar HeyGen: ${mod.title}` :
+          videoType === 'avatar' ? `Generando avatar D-ID: ${mod.title}` :
+          `Ensamblando video: ${mod.title}`;
+        this.updateProgress(courseId, 'assembling_video', i + 1, totalModules, videoLabel);
         const videoPath = join(moduleDir, 'video.mp4');
 
         try {
-          if (videoType === 'avatar' && this.avatarVideo.isAvailable()) {
-            // Avatar mode: D-ID generates talking-head video
-            this.logger.log(`[avatar] Generating avatar video for module ${mod.order}`);
+          if (videoType === 'heygen' && this.heygenVideo.isAvailable()) {
+            // HeyGen mode: advanced avatar with scene templates
+            this.logger.log(`[heygen] Generating HeyGen video for module ${mod.order}`);
+            await this.heygenVideo.generateVideo({
+              script: moduleScript.script,
+              voice,
+              voiceSource: heygenConfig?.voiceSource || 'heygen',
+              heygenVoiceId: heygenConfig?.heygenVoiceId,
+              avatarId: heygenConfig?.avatarId,
+              avatarType: heygenConfig?.avatarType || 'stock',
+              sceneTemplate: heygenConfig?.sceneTemplate || 'talking_head',
+              pipPosition: heygenConfig?.pipPosition,
+              pipSize: heygenConfig?.pipSize,
+              background: heygenConfig?.background || 'studio',
+              backgroundCustomUrl: heygenConfig?.backgroundCustomUrl,
+              emotion: heygenConfig?.emotion || 'neutral',
+              speed: heygenConfig?.speed || 1.0,
+              outputDir: moduleDir,
+              moduleOrder: mod.order,
+            });
+          } else if (videoType === 'avatar' && this.avatarVideo.isAvailable()) {
+            // D-ID avatar mode: talking-head video
+            this.logger.log(`[avatar] Generating D-ID avatar video for module ${mod.order}`);
             await this.avatarVideo.generateAvatarVideo({
               script: moduleScript.script,
               voice,
@@ -247,7 +272,7 @@ export class GenerationService {
             course_id: courseId,
             module_id: mod.id,
             status: 'DONE',
-            config: { voice, slideStyle, targetDurationMin },
+            config: { voice, slideStyle, targetDurationMin, videoType, ...(heygenConfig ? { heygenConfig: heygenConfig as any } : {}) } as any,
             assets: {
               audio: `/uploads/generated/${courseId}/module_${mod.order}/audio.mp3`,
               slides: `/uploads/generated/${courseId}/module_${mod.order}/slides/`,
