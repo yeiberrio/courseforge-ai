@@ -747,6 +747,179 @@ pnpm test:e2e
 
 ---
 
-*Última actualización: Marzo 2026*
+---
+
+## 13. Estado real de implementación (Marzo 2026)
+
+> **Nota:** La arquitectura implementada difiere de la visión original (secciones 1-12).
+> Se optó por NestJS + PostgreSQL propio en lugar de Supabase, y una sola app Next.js
+> en lugar de múltiples apps. A continuación el estado actual.
+
+### 13.1 Arquitectura implementada
+
+```
+courseforge/
+├── apps/
+│   └── web/                  # Next.js 15 (static export) — toda la UI
+├── backend/                  # NestJS 10 + Prisma 5 — API REST completa
+├── packages/                 # (vacío, reservado para futuro)
+├── docker-compose.yml        # PostgreSQL 16 (dev, port 5441)
+├── pnpm-workspace.yaml       # Monorepo config
+└── turbo.json                # Turborepo config
+```
+
+**Stack real:**
+- **Backend:** NestJS 10 + Prisma 5 (binary engine) + PostgreSQL 16
+- **Frontend:** Next.js 15 (static export) + Tailwind + shadcn/ui
+- **Mobile:** Capacitor 6 (Android + iOS configurados)
+- **Deploy:** Backend → Railway (Dockerfile), Frontend → Vercel (static)
+- **Auth:** JWT + bcryptjs (access token 15m + refresh token 7d)
+- **TTS:** Edge TTS (Microsoft, gratis) — no ElevenLabs
+- **Avatar IA:** D-ID API (talking-head videos con lip-sync)
+- **Slides:** SVG generados con Node.js (no python-pptx)
+- **Video assembly:** FFmpeg (slides + audio → MP4)
+- **IA para guiones:** Claude API (Anthropic) con fallback local
+
+### 13.2 Base de datos (Prisma schema — 20 modelos, 14 enums)
+
+Modelos implementados:
+- `User` (roles: ADMIN, CREATOR, STUDENT, MODERATOR)
+- `Category` (8 categorías seed)
+- `Course` (status: DRAFT → GENERATING → REVIEW → APPROVED → PUBLISHED → ARCHIVED)
+- `CourseModule` (status: PENDING → GENERATING → DONE → FAILED)
+- `Enrollment`, `ModuleProgress`
+- `VideoJob` (config jsonb, assets jsonb, error_log)
+- `Upload` (documentos subidos)
+- Y otros modelos preparados para futuras fases
+
+### 13.3 Backend — Módulos implementados
+
+| Módulo | Endpoints | Estado |
+|---|---|---|
+| **Auth** | login, register, refresh, logout, me, change-password | ✅ Completo |
+| **Users** | CRUD + roles | ✅ Completo |
+| **Categories** | CRUD + seed 8 categorías | ✅ Completo |
+| **Courses** | CRUD + my-courses + by-slug | ✅ Completo |
+| **CourseModules** | CRUD | ✅ Completo |
+| **Enrollments** | enroll, progress tracking | ✅ Completo |
+| **Uploads** | upload document (PDF, DOCX, TXT, MD) | ✅ Completo |
+| **Generation** | analyze-document, create-course, progress, voices, avatars | ✅ Completo |
+| **Health** | healthcheck endpoint | ✅ Completo |
+
+### 13.4 Servicios de generación de contenido
+
+| Servicio | Descripción | Estado |
+|---|---|---|
+| **DocumentParserService** | Extrae texto de DOCX (mammoth) y PDF (pdf-parse) | ✅ Completo |
+| **ScriptGeneratorService** | Genera guiones con Claude API o fallback local | ✅ Completo |
+| **TtsService** | Genera audio con Edge TTS (6 voces español) | ✅ Completo |
+| **SlideService** | Genera slides SVG 1920x1080 (3 estilos) | ✅ Completo |
+| **VideoAssemblyService** | Ensambla slides + audio → MP4 con FFmpeg | ✅ Completo |
+| **AvatarVideoService** | Genera video con avatar IA vía D-ID API | ✅ Completo |
+
+### 13.5 Frontend — Páginas implementadas
+
+| Página | Ruta | Funcionalidad |
+|---|---|---|
+| Landing | `/` | Página de inicio |
+| Login | `/login` | Autenticación |
+| Registro | `/registro` | Crear cuenta |
+| Dashboard | `/dashboard` | Panel principal (role-aware) |
+| Categorías | `/dashboard/categorias` | CRUD categorías (admin) |
+| Cursos | `/dashboard/cursos` | Lista de cursos del creador |
+| Crear curso | `/dashboard/cursos/nuevo` | Formulario manual |
+| Generar curso IA | `/dashboard/cursos/generar` | Workflow 4 pasos con IA |
+| Detalle curso | `/dashboard/cursos/detalle?id=X` | Ver/editar curso + módulos |
+| Usuarios | `/dashboard/usuarios` | Lista usuarios (admin) |
+| Aprendizaje | `/dashboard/aprendizaje` | Cursos del estudiante |
+| Perfil | `/dashboard/perfil` | Editar perfil |
+
+### 13.6 Flujo de generación de curso (implementado)
+
+```
+1. SUBIR DOCUMENTO
+   - Creador sube PDF/DOCX/TXT/MD (máx 20MB)
+   - DocumentParserService extrae texto plano
+   - ScriptGeneratorService (Claude o local) analiza estructura
+   - Devuelve: título, descripción, módulos con objetivos
+
+2. CONFIGURAR
+   - Seleccionar categoría
+   - Tipo de video: Presentación (slides) o Avatar IA (D-ID)
+   - Si avatar: seleccionar avatar (Alice, Alex, Emma, Jack, Lisa)
+   - Voz TTS: 6 opciones español (CO, MX, ES, masculino/femenino)
+   - Estilo slides: Minimal, Branded, Dark (solo modo slides)
+   - Duración por módulo: 2-15 minutos
+
+3. GENERACIÓN EN SEGUNDO PLANO (por módulo)
+   a. Genera guión de narración (Claude API o local)
+   b. Genera audio TTS (Edge TTS)
+   c. Genera slides SVG
+   d. Ensambla video:
+      - Modo slides: FFmpeg combina slides + audio → MP4
+      - Modo avatar: D-ID genera video con persona IA hablando
+   e. Guarda video en /uploads/generated/{courseId}/module_{n}/
+
+4. POLLING DE PROGRESO
+   - Frontend consulta cada 2s: /generation/progress/{courseId}
+   - Muestra barra de progreso por módulo
+   - Al completar: estado del curso → REVIEW
+```
+
+### 13.7 Deploy en producción
+
+| Servicio | Plataforma | URL |
+|---|---|---|
+| **Backend API** | Railway (Docker) | `https://courseforge-ai-production-5bb9.up.railway.app` |
+| **Frontend** | Vercel (static) | `https://web-virid-one-55.vercel.app` |
+| **Base de datos** | Railway PostgreSQL | `postgres.railway.internal:5432` |
+
+**Variables de entorno en Railway:**
+- `DATABASE_URL` — PostgreSQL interno de Railway
+- `JWT_SECRET` — String aleatorio para firmar tokens
+- `JWT_EXPIRATION` — `15m`
+- `JWT_REFRESH_EXPIRATION` — `7d`
+- `FRONTEND_URL` — URL de Vercel (CORS)
+- `DID_API_KEY` — API Key de D-ID para avatar IA
+- `ANTHROPIC_API_KEY` — (opcional) Para guiones con Claude
+- `NODE_ENV` — `production`
+- `PORT` — `3000`
+
+**Variables de entorno en Vercel:**
+- `NEXT_PUBLIC_API_URL` — URL del backend Railway + `/api/v1`
+
+### 13.8 Credenciales de prueba (seed)
+
+| Rol | Email | Contraseña |
+|---|---|---|
+| Admin | `admin@courseforge.com` | `Admin2026*` |
+| Creator | `creator@courseforge.com` | `Creator2026*` |
+| Student | `student@courseforge.com` | `Student2026*` |
+
+### 13.9 Pendiente por implementar
+
+**Fase 1 restante:**
+- [ ] Player de video en detalle del curso (actualmente muestra URL)
+- [ ] Progreso real de estudiante al ver videos
+- [ ] Aprobar/rechazar módulos en revisión
+
+**Fase 2:**
+- [ ] Agentes IA (ventas, tutor, soporte) con RAG
+- [ ] Certificados verificables (PDF + QR)
+- [ ] Email sequences (Resend)
+- [ ] Pagos (Stripe / Wompi)
+- [ ] Publicación a YouTube
+- [ ] Clonación de voz (ElevenLabs)
+- [ ] Miniaturas automáticas (DALL-E)
+
+**Fase 3:**
+- [ ] Programa de afiliados
+- [ ] Clips automáticos para redes
+- [ ] Blog SEO automático
+- [ ] Analytics avanzados
+- [ ] WhatsApp Business API
+
+---
+
+*Última actualización: 27 de Marzo de 2026*
 *Aprobado por: propietario del proyecto*
-*Próximo paso: iniciar Fase 1 con setup del monorepo y schema de Supabase*
