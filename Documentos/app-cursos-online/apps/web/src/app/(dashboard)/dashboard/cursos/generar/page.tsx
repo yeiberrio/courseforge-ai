@@ -18,8 +18,7 @@ import {
   Palette,
 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1";
-const BASE_URL = API_URL.replace("/api/v1", "");
+const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1").replace("/api/v1", "");
 
 interface CourseStructure {
   title: string;
@@ -94,26 +93,13 @@ export default function GenerarCursoPage() {
     setAnalyzing(true);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch(
-        `${API_URL}/generation/analyze-document`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
-        }
+      const data = await api.uploadFile(
+        "/generation/analyze-document",
+        file,
+        token,
       );
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.message || "Error al analizar");
-      }
-
-      const data = await response.json();
-      setFilePath(data.filePath);
-      setStructure(data.structure);
+      setFilePath((data as any).filePath);
+      setStructure((data as any).structure);
       setStep("configure");
     } catch (err: any) {
       setError(err.message);

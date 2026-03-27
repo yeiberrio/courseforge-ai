@@ -1,5 +1,51 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1";
 
+const TOKEN_KEY = "cf_access_token";
+const REFRESH_KEY = "cf_refresh_token";
+
+/**
+ * Attempt to refresh the access token using the stored refresh token.
+ * Returns the new access token or null if refresh fails.
+ */
+async function refreshAccessToken(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const refreshToken = localStorage.getItem(REFRESH_KEY);
+  if (!refreshToken) return null;
+
+  try {
+    const response = await fetch(`${API_URL}/auth/refresh`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${refreshToken}`,
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (data.access_token) {
+      localStorage.setItem(TOKEN_KEY, data.access_token);
+      if (data.refresh_token) {
+        localStorage.setItem(REFRESH_KEY, data.refresh_token);
+      }
+      return data.access_token;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the current valid token - tries stored token first, then refreshes.
+ */
+function getStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
 interface FetchOptions extends RequestInit {
   token?: string;
 }
@@ -16,10 +62,27 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  let response = await fetch(`${API_URL}${endpoint}`, {
     headers,
     ...rest,
   });
+
+  // Auto-refresh on 401
+  if (response.status === 401 && token) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      headers["Authorization"] = `Bearer ${newToken}`;
+      response = await fetch(`${API_URL}${endpoint}`, {
+        headers,
+        ...rest,
+      });
+      // Sync token state across hooks via storage event
+      window.dispatchEvent(new StorageEvent("storage", {
+        key: TOKEN_KEY,
+        newValue: newToken,
+      }));
+    }
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: "Error del servidor" }));
@@ -27,6 +90,34 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
   }
 
   return response.json();
+}
+
+async function fetchWithAuth(
+  url: string,
+  token: string | undefined,
+  init: RequestInit = {},
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    ...(init.headers as Record<string, string> || {}),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  let response = await fetch(url, { ...init, headers });
+
+  // Auto-refresh on 401
+  if (response.status === 401 && token) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      headers["Authorization"] = `Bearer ${newToken}`;
+      response = await fetch(url, { ...init, headers });
+      window.dispatchEvent(new StorageEvent("storage", {
+        key: TOKEN_KEY,
+        newValue: newToken,
+      }));
+    }
+  }
+
+  return response;
 }
 
 export const api = {
@@ -46,12 +137,8 @@ export const api = {
     const formData = new FormData();
     formData.append("file", file);
 
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const response = await fetchWithAuth(`${API_URL}${endpoint}`, token, {
       method: "POST",
-      headers,
       body: formData,
     });
 
@@ -64,9 +151,8 @@ export const api = {
   },
 
   downloadFile: async (endpoint: string, token: string, filename: string) => {
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await fetchWithAuth(`${API_URL}${endpoint}`, token);
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: "Error al descargar" }));
       throw new Error(error.message || "Error al descargar");

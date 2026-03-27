@@ -32,6 +32,21 @@ export function useAuth() {
     setLoading(false);
   }, []);
 
+  // Listen for token refresh events from the api module
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === TOKEN_KEY && e.newValue) {
+        setToken(e.newValue);
+      }
+      if (e.key === TOKEN_KEY && !e.newValue) {
+        setToken(null);
+        setUser(null);
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
+
   const login = useCallback(async (email: string, password: string) => {
     const data = await api.post<AuthResponse>("/auth/login", { email, password });
 
