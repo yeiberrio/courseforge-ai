@@ -37,5 +37,5 @@ backend/uploads/
 apps/web/android/
 apps/web/ios/
 
-# prisma
-backend/prisma/migrations/
+# prisma (migrations must be tracked for deployment)
+# backend/prisma/migrations/
