@@ -128,24 +128,35 @@ ${text.substring(0, 15000)}`,
         max_tokens: 8192,
         messages: [{
           role: 'user',
-          content: `Genera un guión de narración para un video educativo.
+          content: `Genera un guión de NARRACIÓN HABLADA para un video educativo tipo clase.
 
 MÓDULO: ${moduleTitle}
 CONTENIDO BASE:
 ${moduleContent.substring(0, 8000)}
 
+REGLAS CRÍTICAS PARA EL GUIÓN:
+- El "script" debe contener EXACTAMENTE lo que el narrador dice en voz alta, palabra por palabra.
+- NO incluyas descripciones visuales ni de escena (NO escribas cosas como "aparece una persona", "se muestra una pizarra", "el profesor señala").
+- NO incluyas acotaciones entre corchetes ni paréntesis (NO escribas [pausa], (señalando la pantalla), etc.).
+- Escribe como si fueras un profesor hablando directamente al estudiante. Usa "tú", "nosotros", "vamos a ver".
+- Tono: educativo, conversacional y natural, como una clase presencial.
+
+ESTRUCTURA DEL GUIÓN:
+1. Apertura con gancho (captar atención)
+2. Desarrollo con explicaciones claras y ejemplos concretos
+3. Cierre con resumen de puntos clave
+
 REQUISITOS:
-- Duración objetivo: ${targetDurationMin} minutos (~${wordsNeeded} palabras)
-- Tono: educativo pero conversacional, natural
-- Estructura: apertura con gancho, desarrollo con ejemplos, cierre con resumen
-- Divide en slides (4-8 slides por módulo)
+- Duración objetivo: ${targetDurationMin} minutos (~${wordsNeeded} palabras en el script)
+- Divide el contenido en slides (4-8 slides por módulo)
+- Los slides son las diapositivas de apoyo visual con puntos clave resumidos
 - Idioma: ${language === 'es' ? 'español' : language}
 
 Responde SOLO con JSON válido:
 {
-  "script": "texto completo del guión de narración...",
+  "script": "texto completo de lo que el narrador dice en voz alta, sin acotaciones ni descripciones visuales...",
   "slides": [
-    { "title": "título del slide", "content": ["punto 1", "punto 2", "punto 3"] }
+    { "title": "título del slide", "content": ["punto clave 1", "punto clave 2", "punto clave 3"] }
   ],
   "estimatedDurationMin": ${targetDurationMin}
 }`,
@@ -249,10 +260,30 @@ Responde SOLO con JSON válido:
       .map((s) => s.trim())
       .filter((s) => s.length > 10);
 
-    // Build a narration script from the content
-    const intro = `Bienvenidos a este módulo: ${moduleTitle}. En esta sección vamos a explorar los conceptos fundamentales relacionados con este tema.`;
-    const body = sentences.slice(0, 20).join('. ') + '.';
-    const outro = `Esto ha sido todo por este módulo sobre ${moduleTitle}. Recuerda practicar lo aprendido y nos vemos en el siguiente módulo.`;
+    // Build a spoken narration script from the content
+    const intro = `Hola, bienvenidos. En este módulo vamos a hablar sobre ${moduleTitle}. Vamos a cubrir los puntos más importantes para que puedas entender y aplicar estos conceptos.`;
+
+    // Group sentences into paragraphs with natural transitions
+    const transitions = [
+      'Empecemos con lo fundamental.',
+      'Ahora bien, hay algo importante que debes saber.',
+      'Veamos esto con más detalle.',
+      'Otro punto clave es el siguiente.',
+      'Continuemos con el siguiente concepto.',
+    ];
+
+    const bodyParts: string[] = [];
+    const usableSentences = sentences.slice(0, 20);
+    const groupSize = Math.max(1, Math.ceil(usableSentences.length / transitions.length));
+
+    for (let i = 0; i < usableSentences.length; i += groupSize) {
+      const group = usableSentences.slice(i, i + groupSize).join('. ') + '.';
+      const transIdx = Math.min(Math.floor(i / groupSize), transitions.length - 1);
+      bodyParts.push(`${transitions[transIdx]} ${group}`);
+    }
+
+    const body = bodyParts.join('\n\n');
+    const outro = `Bien, con esto terminamos este módulo sobre ${moduleTitle}. Recuerda repasar los conceptos clave que vimos y, si es necesario, vuelve a ver esta lección. Nos vemos en el siguiente módulo.`;
     const script = `${intro}\n\n${body}\n\n${outro}`;
 
     // Generate slides from content
