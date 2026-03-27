@@ -1,6 +1,10 @@
 {
-  "framework": "nextjs",
+  "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": "out",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
 }
