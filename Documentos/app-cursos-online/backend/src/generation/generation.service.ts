@@ -4,7 +4,8 @@ import { ScriptGeneratorService, CourseStructure, ModuleScript } from './script-
 import { TtsService } from './tts.service';
 import { SlideService, SlideData } from './slide.service';
 import { VideoAssemblyService } from './video-assembly.service';
-import { readFileSync, mkdirSync, existsSync } from 'fs';
+import { DocumentParserService } from './document-parser.service';
+import { mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 
 export interface GenerationProgress {
@@ -26,6 +27,7 @@ export class GenerationService {
     private tts: TtsService,
     private slides: SlideService,
     private videoAssembly: VideoAssemblyService,
+    private documentParser: DocumentParserService,
   ) {}
 
   getProgress(courseId: string): GenerationProgress | null {
@@ -37,11 +39,13 @@ export class GenerationService {
    */
   async analyzeDocument(filePath: string): Promise<CourseStructure> {
     const fullPath = join(process.cwd(), filePath);
+    this.logger.log(`[analyzeDocument] Processing file: ${fullPath}`);
     if (!existsSync(fullPath)) {
       throw new NotFoundException(`Archivo no encontrado: ${filePath}`);
     }
 
-    const text = readFileSync(fullPath, 'utf-8');
+    const text = await this.documentParser.extractText(fullPath);
+    this.logger.log(`[analyzeDocument] Extracted ${text.length} characters from document`);
     return this.scriptGenerator.analyzeCourseDocument(text);
   }
 
@@ -58,8 +62,11 @@ export class GenerationService {
   ) {
     // 1. Analyze document
     const fullPath = join(process.cwd(), filePath);
-    const text = readFileSync(fullPath, 'utf-8');
+    this.logger.log(`[createCourse] Extracting text from: ${fullPath}`);
+    const text = await this.documentParser.extractText(fullPath);
+    this.logger.log(`[createCourse] Extracted ${text.length} chars. Analyzing structure...`);
     const structure = await this.scriptGenerator.analyzeCourseDocument(text);
+    this.logger.log(`[createCourse] Structure: "${structure.title}" with ${structure.modules.length} modules`);
 
     // 2. Create course in DB
     const slug = structure.title

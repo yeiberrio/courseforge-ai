@@ -19,11 +19,14 @@ import { TtsService } from './tts.service';
 import { CurrentUser, Roles } from '../common/decorators';
 import { UserRole } from '@prisma/client';
 import { GenerateCourseDto } from './dto/generate-course.dto';
+import { Logger } from '@nestjs/common';
 
 @ApiTags('Generation')
 @ApiBearerAuth()
 @Controller('generation')
 export class GenerationController {
+  private readonly logger = new Logger(GenerationController.name);
+
   constructor(
     private generationService: GenerationService,
     private ttsService: TtsService,
@@ -52,14 +55,21 @@ export class GenerationController {
     )
     file: Express.Multer.File,
   ) {
-    const structure = await this.generationService.analyzeDocument(
-      `uploads/documents/${file.filename}`,
-    );
-    return {
-      filePath: `uploads/documents/${file.filename}`,
-      originalName: file.originalname,
-      structure,
-    };
+    this.logger.log(`[analyze-document] File received: ${file.originalname} (${file.mimetype}, ${file.size} bytes)`);
+    try {
+      const structure = await this.generationService.analyzeDocument(
+        `uploads/documents/${file.filename}`,
+      );
+      this.logger.log(`[analyze-document] Success: "${structure.title}" with ${structure.modules.length} modules`);
+      return {
+        filePath: `uploads/documents/${file.filename}`,
+        originalName: file.originalname,
+        structure,
+      };
+    } catch (error) {
+      this.logger.error(`[analyze-document] Failed: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   @Post('create-course')
@@ -69,14 +79,22 @@ export class GenerationController {
     @CurrentUser('id') userId: string,
     @Body() dto: GenerateCourseDto,
   ) {
-    return this.generationService.createCourseFromDocument(
-      userId,
-      dto.filePath,
-      dto.categoryId,
-      dto.voice,
-      dto.slideStyle,
-      dto.targetDurationMin,
-    );
+    this.logger.log(`[create-course] User ${userId} starting course generation. File: ${dto.filePath}, Category: ${dto.categoryId}`);
+    try {
+      const result = await this.generationService.createCourseFromDocument(
+        userId,
+        dto.filePath,
+        dto.categoryId,
+        dto.voice,
+        dto.slideStyle,
+        dto.targetDurationMin,
+      );
+      this.logger.log(`[create-course] Course created: ${result.course.id} - "${result.course.title}"`);
+      return result;
+    } catch (error) {
+      this.logger.error(`[create-course] Failed: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   @Get('progress/:courseId')

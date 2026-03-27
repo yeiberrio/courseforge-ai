@@ -5,6 +5,7 @@ import { TtsService } from './tts.service';
 import { SlideService } from './slide.service';
 import { VideoAssemblyService } from './video-assembly.service';
 import { ScriptGeneratorService } from './script-generator.service';
+import { DocumentParserService } from './document-parser.service';
 
 @Module({
   controllers: [GenerationController],
@@ -14,6 +15,7 @@ import { ScriptGeneratorService } from './script-generator.service';
     SlideService,
     VideoAssemblyService,
     ScriptGeneratorService,
+    DocumentParserService,
   ],
   exports: [GenerationService],
 })
