@@ -207,6 +207,7 @@ export class GenerationService {
             this.logger.log(`[avatar] Generating avatar video for module ${mod.order}`);
             await this.avatarVideo.generateAvatarVideo({
               script: moduleScript.script,
+              voice,
               avatarId,
               outputDir: moduleDir,
               moduleOrder: mod.order,

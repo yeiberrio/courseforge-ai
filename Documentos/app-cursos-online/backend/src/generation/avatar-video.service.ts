@@ -5,7 +5,7 @@ import { join } from 'path';
 
 export interface AvatarVideoOptions {
   script: string;
-  audioUrl?: string;
+  voice?: string;
   avatarId?: string;
   outputDir: string;
   moduleOrder: number;
@@ -16,7 +16,47 @@ export interface DIDAvatar {
   name: string;
   gender: string;
   preview: string;
+  imageUrl: string;
 }
+
+// D-ID public sample images that are confirmed to work
+const AVATARS: DIDAvatar[] = [
+  {
+    id: 'alice',
+    name: 'Alice',
+    gender: 'female',
+    preview: 'Mujer profesional, cabello rubio',
+    imageUrl: 'https://d-id-public-bucket.s3.us-west-2.amazonaws.com/alice.jpg',
+  },
+  {
+    id: 'alex',
+    name: 'Alex',
+    gender: 'male',
+    preview: 'Hombre joven, estilo casual',
+    imageUrl: 'https://d-id-public-bucket.s3.us-west-2.amazonaws.com/alex.jpg',
+  },
+  {
+    id: 'emma',
+    name: 'Emma',
+    gender: 'female',
+    preview: 'Mujer joven, look moderno',
+    imageUrl: 'https://d-id-public-bucket.s3.us-west-2.amazonaws.com/emma.jpg',
+  },
+  {
+    id: 'jack',
+    name: 'Jack',
+    gender: 'male',
+    preview: 'Hombre profesional, formal',
+    imageUrl: 'https://d-id-public-bucket.s3.us-west-2.amazonaws.com/jack.jpg',
+  },
+  {
+    id: 'lisa',
+    name: 'Lisa',
+    gender: 'female',
+    preview: 'Mujer, estilo ejecutivo',
+    imageUrl: 'https://d-id-public-bucket.s3.us-west-2.amazonaws.com/lisa.jpg',
+  },
+];
 
 @Injectable()
 export class AvatarVideoService {
@@ -32,34 +72,28 @@ export class AvatarVideoService {
     return !!this.apiKey;
   }
 
-  /**
-   * Get available D-ID presenters/avatars.
-   */
   async getAvatars(): Promise<DIDAvatar[]> {
-    // D-ID stock presenters - curated list of high-quality avatars
-    return [
-      { id: 'anna_costume1_cameraA', name: 'Anna', gender: 'female', preview: 'Professional woman, formal attire' },
-      { id: 'amy-Aq6OmGZnMt', name: 'Amy', gender: 'female', preview: 'Young woman, casual style' },
-      { id: 'josh_lite3_20230714', name: 'Josh', gender: 'male', preview: 'Professional man, formal attire' },
-      { id: 'matt-beard_MhdJDmQVco', name: 'Matt', gender: 'male', preview: 'Man with beard, casual style' },
-      { id: 'emma_f2_lite_20230609', name: 'Emma', gender: 'female', preview: 'Professional woman, modern look' },
-    ];
+    return AVATARS;
+  }
+
+  private getAvatarImageUrl(avatarId?: string): string {
+    const avatar = AVATARS.find((a) => a.id === avatarId);
+    return avatar?.imageUrl || AVATARS[0].imageUrl;
   }
 
   /**
    * Generate a talking-head video using D-ID API.
-   * Sends the script text and D-ID generates the video with lip-sync.
    */
   async generateAvatarVideo(options: AvatarVideoOptions): Promise<string> {
     if (!this.apiKey) {
-      throw new Error('DID_API_KEY no configurada. Agrega la variable de entorno DID_API_KEY.');
+      throw new Error('DID_API_KEY no configurada.');
     }
 
-    const { script, avatarId, outputDir, moduleOrder } = options;
+    const { script, voice, avatarId, outputDir, moduleOrder } = options;
+    const imageUrl = this.getAvatarImageUrl(avatarId);
 
-    this.logger.log(`[avatar] Creating talk for module ${moduleOrder}, avatar: ${avatarId || 'default'}`);
+    this.logger.log(`[avatar] Creating talk for module ${moduleOrder}, avatar: ${avatarId || 'alice'}, image: ${imageUrl}`);
 
-    // Step 1: Create a talk (video generation request)
     const talkResponse = await fetch(`${this.apiUrl}/talks`, {
       method: 'POST',
       headers: {
@@ -67,15 +101,13 @@ export class AvatarVideoService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        source_url: avatarId
-          ? `https://create-images-results.d-id.com/api_docs/assets/${avatarId}/image.png`
-          : 'https://create-images-results.d-id.com/api_docs/assets/anna_costume1_cameraA/image.png',
+        source_url: imageUrl,
         script: {
           type: 'text',
-          input: script.substring(0, 5000), // D-ID limit
+          input: script.substring(0, 5000),
           provider: {
             type: 'microsoft',
-            voice_id: 'es-CO-GonzaloNeural',
+            voice_id: voice || 'es-CO-GonzaloNeural',
           },
         },
         config: {
@@ -96,66 +128,8 @@ export class AvatarVideoService {
     const talkId = talkData.id;
     this.logger.log(`[avatar] Talk created: ${talkId}`);
 
-    // Step 2: Poll until video is ready
     const videoUrl = await this.pollTalkStatus(talkId);
     this.logger.log(`[avatar] Video ready: ${videoUrl}`);
-
-    // Step 3: Download the video
-    const outputPath = join(outputDir, 'video.mp4');
-    await this.downloadVideo(videoUrl, outputPath);
-    this.logger.log(`[avatar] Video saved: ${outputPath}`);
-
-    return outputPath;
-  }
-
-  /**
-   * Generate avatar video using pre-generated audio file instead of D-ID TTS.
-   */
-  async generateAvatarVideoWithAudio(
-    audioUrl: string,
-    avatarId: string | undefined,
-    outputDir: string,
-    moduleOrder: number,
-  ): Promise<string> {
-    if (!this.apiKey) {
-      throw new Error('DID_API_KEY no configurada.');
-    }
-
-    this.logger.log(`[avatar] Creating talk with audio for module ${moduleOrder}`);
-
-    const talkResponse = await fetch(`${this.apiUrl}/talks`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${this.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        source_url: avatarId
-          ? `https://create-images-results.d-id.com/api_docs/assets/${avatarId}/image.png`
-          : 'https://create-images-results.d-id.com/api_docs/assets/anna_costume1_cameraA/image.png',
-        script: {
-          type: 'audio',
-          audio_url: audioUrl,
-        },
-        config: {
-          fluent: true,
-          pad_audio: 0.5,
-          stitch: true,
-        },
-      }),
-    });
-
-    if (!talkResponse.ok) {
-      const error = await talkResponse.json().catch(() => ({}));
-      this.logger.error(`[avatar] D-ID create talk (audio) failed: ${JSON.stringify(error)}`);
-      throw new Error(`D-ID error: ${error.message || error.description || talkResponse.statusText}`);
-    }
-
-    const talkData = await talkResponse.json();
-    const talkId = talkData.id;
-    this.logger.log(`[avatar] Talk created (audio): ${talkId}`);
-
-    const videoUrl = await this.pollTalkStatus(talkId);
 
     const outputPath = join(outputDir, 'video.mp4');
     await this.downloadVideo(videoUrl, outputPath);
@@ -169,7 +143,7 @@ export class AvatarVideoService {
    */
   private async pollTalkStatus(talkId: string, maxAttempts = 60): Promise<string> {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      await this.sleep(5000); // Wait 5 seconds between polls
+      await this.sleep(5000);
 
       const response = await fetch(`${this.apiUrl}/talks/${talkId}`, {
         headers: {
@@ -190,16 +164,13 @@ export class AvatarVideoService {
       }
 
       if (data.status === 'error' || data.status === 'rejected') {
-        throw new Error(`D-ID video generation failed: ${data.error?.description || 'Unknown error'}`);
+        throw new Error(`D-ID video failed: ${data.error?.description || 'Unknown error'}`);
       }
     }
 
     throw new Error('D-ID video generation timed out after 5 minutes');
   }
 
-  /**
-   * Download video from URL to local file.
-   */
   private async downloadVideo(url: string, outputPath: string): Promise<void> {
     const response = await fetch(url);
     if (!response.ok) {
