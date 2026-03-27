@@ -15,6 +15,9 @@ import {
   Menu,
   X,
   Sparkles,
+  Youtube,
+  TrendingUp,
+  Brain,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -48,6 +51,24 @@ const navItems: NavItem[] = [
     label: "Generar con IA",
     href: "/dashboard/cursos/generar",
     icon: <Sparkles className="h-5 w-5" />,
+    roles: ["CREATOR", "ADMIN"],
+  },
+  {
+    label: "YouTube",
+    href: "/dashboard/youtube",
+    icon: <Youtube className="h-5 w-5" />,
+    roles: ["CREATOR", "ADMIN"],
+  },
+  {
+    label: "Contenido Viral",
+    href: "/dashboard/viral",
+    icon: <TrendingUp className="h-5 w-5" />,
+    roles: ["CREATOR", "ADMIN"],
+  },
+  {
+    label: "Base de Conocimiento",
+    href: "/dashboard/conocimiento",
+    icon: <Brain className="h-5 w-5" />,
     roles: ["CREATOR", "ADMIN"],
   },
   {
