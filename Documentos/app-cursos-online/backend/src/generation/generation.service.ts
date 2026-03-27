@@ -4,9 +4,12 @@ import { ScriptGeneratorService, CourseStructure, ModuleScript } from './script-
 import { TtsService } from './tts.service';
 import { SlideService, SlideData } from './slide.service';
 import { VideoAssemblyService } from './video-assembly.service';
+import { AvatarVideoService } from './avatar-video.service';
 import { DocumentParserService } from './document-parser.service';
 import { mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
+
+export type VideoType = 'slides' | 'avatar';
 
 export interface GenerationProgress {
   courseId: string;
@@ -27,6 +30,7 @@ export class GenerationService {
     private tts: TtsService,
     private slides: SlideService,
     private videoAssembly: VideoAssemblyService,
+    private avatarVideo: AvatarVideoService,
     private documentParser: DocumentParserService,
   ) {}
 
@@ -59,6 +63,8 @@ export class GenerationService {
     voice: string = 'es-CO-GonzaloNeural',
     slideStyle: 'minimal' | 'branded' | 'dark' = 'minimal',
     targetDurationMin: number = 5,
+    videoType: VideoType = 'slides',
+    avatarId?: string,
   ) {
     // 1. Analyze document
     const fullPath = join(process.cwd(), filePath);
@@ -102,7 +108,7 @@ export class GenerationService {
     }
 
     // 4. Start generation in background
-    this.generateCourseContent(course.id, text, structure, voice, slideStyle, targetDurationMin)
+    this.generateCourseContent(course.id, text, structure, voice, slideStyle, targetDurationMin, videoType, avatarId)
       .catch((error) => {
         this.logger.error(`Generation failed for course ${course.id}: ${error.message}`);
         this.updateProgress(course.id, 'failed', 0, 0, error.message);
@@ -125,6 +131,8 @@ export class GenerationService {
     voice: string,
     slideStyle: 'minimal' | 'branded' | 'dark',
     targetDurationMin: number,
+    videoType: VideoType = 'slides',
+    avatarId?: string,
   ) {
     const modules = await this.prisma.courseModule.findMany({
       where: { course_id: courseId },
@@ -185,16 +193,32 @@ export class GenerationService {
         }));
         await this.slides.generateSlides(slidesData, slidesDir, slideStyle);
 
-        // Assemble video
-        this.updateProgress(courseId, 'assembling_video', i + 1, totalModules, `Ensamblando video: ${mod.title}`);
+        // Assemble video (slides mode or avatar mode)
+        this.updateProgress(courseId, 'assembling_video', i + 1, totalModules,
+          videoType === 'avatar'
+            ? `Generando avatar IA: ${mod.title}`
+            : `Ensamblando video: ${mod.title}`,
+        );
         const videoPath = join(moduleDir, 'video.mp4');
 
         try {
-          await this.videoAssembly.assembleVideo({
-            slidesDir,
-            audioPath,
-            outputPath: videoPath,
-          });
+          if (videoType === 'avatar' && this.avatarVideo.isAvailable()) {
+            // Avatar mode: D-ID generates talking-head video
+            this.logger.log(`[avatar] Generating avatar video for module ${mod.order}`);
+            await this.avatarVideo.generateAvatarVideo({
+              script: moduleScript.script,
+              avatarId,
+              outputDir: moduleDir,
+              moduleOrder: mod.order,
+            });
+          } else {
+            // Slides mode: combine slides + audio into video
+            await this.videoAssembly.assembleVideo({
+              slidesDir,
+              audioPath,
+              outputPath: videoPath,
+            });
+          }
 
           // Update module with video URL
           await this.prisma.courseModule.update({
@@ -206,8 +230,7 @@ export class GenerationService {
             },
           });
         } catch (videoError) {
-          // Video assembly failed (probably ffmpeg not installed), but audio + slides are ready
-          this.logger.warn(`Video assembly failed for module ${mod.title}: ${videoError.message}. Audio and slides are available.`);
+          this.logger.warn(`Video generation (${videoType}) failed for module ${mod.title}: ${videoError.message}`);
           await this.prisma.courseModule.update({
             where: { id: mod.id },
             data: {

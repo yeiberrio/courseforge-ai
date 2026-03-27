@@ -16,6 +16,7 @@ import { extname, join } from 'path';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { GenerationService } from './generation.service';
 import { TtsService } from './tts.service';
+import { AvatarVideoService } from './avatar-video.service';
 import { CurrentUser, Roles } from '../common/decorators';
 import { UserRole } from '@prisma/client';
 import { GenerateCourseDto } from './dto/generate-course.dto';
@@ -30,6 +31,7 @@ export class GenerationController {
   constructor(
     private generationService: GenerationService,
     private ttsService: TtsService,
+    private avatarVideoService: AvatarVideoService,
   ) {}
 
   @Post('analyze-document')
@@ -88,6 +90,8 @@ export class GenerationController {
         dto.voice,
         dto.slideStyle,
         dto.targetDurationMin,
+        dto.videoType,
+        dto.avatarId,
       );
       this.logger.log(`[create-course] Course created: ${result.course.id} - "${result.course.title}"`);
       return result;
@@ -108,5 +112,14 @@ export class GenerationController {
   @ApiOperation({ summary: 'Listar voces disponibles (español)' })
   async listVoices() {
     return this.ttsService.listVoices();
+  }
+
+  @Get('avatars')
+  @ApiOperation({ summary: 'Listar avatares disponibles para video con IA' })
+  async listAvatars() {
+    return {
+      available: this.avatarVideoService.isAvailable(),
+      avatars: await this.avatarVideoService.getAvatars(),
+    };
   }
 }

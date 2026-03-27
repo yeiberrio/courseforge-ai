@@ -16,6 +16,8 @@ import {
   Play,
   Volume2,
   Palette,
+  Video,
+  User,
 } from "lucide-react";
 
 const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1").replace("/api/v1", "");
@@ -35,7 +37,15 @@ interface GenerationProgress {
   message: string;
 }
 
+interface DIDAvatar {
+  id: string;
+  name: string;
+  gender: string;
+  preview: string;
+}
+
 type Step = "upload" | "configure" | "generating" | "done";
+type VideoType = "slides" | "avatar";
 
 export default function GenerarCursoPage() {
   const { token } = useAuth();
@@ -56,6 +66,10 @@ export default function GenerarCursoPage() {
   const [voice, setVoice] = useState("es-CO-GonzaloNeural");
   const [slideStyle, setSlideStyle] = useState<"minimal" | "branded" | "dark">("dark");
   const [targetDuration, setTargetDuration] = useState(5);
+  const [videoType, setVideoType] = useState<VideoType>("slides");
+  const [avatarId, setAvatarId] = useState("");
+  const [avatars, setAvatars] = useState<DIDAvatar[]>([]);
+  const [avatarAvailable, setAvatarAvailable] = useState(false);
 
   // Generation
   const [courseId, setCourseId] = useState("");
@@ -64,6 +78,13 @@ export default function GenerarCursoPage() {
   useEffect(() => {
     if (!token) return;
     api.get<Category[]>("/categories", token).then(setCategories).catch(() => {});
+    api.get<{ available: boolean; avatars: DIDAvatar[] }>("/generation/avatars", token)
+      .then((data) => {
+        setAvatarAvailable(data.available);
+        setAvatars(data.avatars);
+        if (data.avatars.length > 0) setAvatarId(data.avatars[0].id);
+      })
+      .catch(() => {});
   }, [token]);
 
   // Poll progress
@@ -121,6 +142,8 @@ export default function GenerarCursoPage() {
           voice,
           slideStyle,
           targetDurationMin: targetDuration,
+          videoType,
+          ...(videoType === "avatar" && avatarId ? { avatarId } : {}),
         },
         token
       );
@@ -318,6 +341,70 @@ export default function GenerarCursoPage() {
                 </select>
               </div>
 
+              {/* Video Type */}
+              <div>
+                <label className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <Video className="h-4 w-4" /> Tipo de video
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setVideoType("slides")}
+                    className={`rounded-lg border-2 p-4 text-center transition ${
+                      videoType === "slides"
+                        ? "border-brand-600 bg-brand-50 ring-2 ring-brand-200"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <Palette className="mx-auto mb-2 h-8 w-8 text-brand-600" />
+                    <p className="text-sm font-medium text-gray-900">Presentación</p>
+                    <p className="text-xs text-gray-500">Slides + voz narrada</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVideoType("avatar")}
+                    className={`rounded-lg border-2 p-4 text-center transition ${
+                      videoType === "avatar"
+                        ? "border-brand-600 bg-brand-50 ring-2 ring-brand-200"
+                        : "border-gray-200 hover:border-gray-300"
+                    } ${!avatarAvailable ? "opacity-50" : ""}`}
+                    disabled={!avatarAvailable}
+                  >
+                    <User className="mx-auto mb-2 h-8 w-8 text-indigo-600" />
+                    <p className="text-sm font-medium text-gray-900">Avatar IA</p>
+                    <p className="text-xs text-gray-500">
+                      {avatarAvailable ? "Persona IA hablando" : "Requiere API Key D-ID"}
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Avatar Selection (only if avatar mode) */}
+              {videoType === "avatar" && avatars.length > 0 && (
+                <div>
+                  <label className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-700">
+                    <User className="h-4 w-4" /> Seleccionar avatar
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {avatars.map((av) => (
+                      <button
+                        key={av.id}
+                        type="button"
+                        onClick={() => setAvatarId(av.id)}
+                        className={`rounded-lg border-2 p-3 text-center text-sm transition ${
+                          avatarId === av.id
+                            ? "border-brand-600 bg-brand-50 ring-2 ring-brand-200"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <p className="font-medium text-gray-900">{av.name}</p>
+                        <p className="text-xs text-gray-500">{av.preview}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-700">
                   <Volume2 className="h-4 w-4" /> Voz
@@ -348,7 +435,7 @@ export default function GenerarCursoPage() {
                 </select>
               </div>
 
-              <div>
+              {videoType === "slides" && <div>
                 <label className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-700">
                   <Palette className="h-4 w-4" /> Estilo de slides
                 </label>
@@ -392,7 +479,7 @@ export default function GenerarCursoPage() {
                     </button>
                   ))}
                 </div>
-              </div>
+              </div>}
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">

@@ -6,6 +6,7 @@ import { SlideService } from './slide.service';
 import { VideoAssemblyService } from './video-assembly.service';
 import { ScriptGeneratorService } from './script-generator.service';
 import { DocumentParserService } from './document-parser.service';
+import { AvatarVideoService } from './avatar-video.service';
 
 @Module({
   controllers: [GenerationController],
@@ -16,6 +17,7 @@ import { DocumentParserService } from './document-parser.service';
     VideoAssemblyService,
     ScriptGeneratorService,
     DocumentParserService,
+    AvatarVideoService,
   ],
   exports: [GenerationService],
 })

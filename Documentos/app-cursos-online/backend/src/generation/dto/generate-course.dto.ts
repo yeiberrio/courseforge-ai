@@ -26,4 +26,14 @@ export class GenerateCourseDto {
   @Min(1)
   @Max(30)
   targetDurationMin?: number;
+
+  @ApiPropertyOptional({ enum: ['slides', 'avatar'], default: 'slides', description: 'Tipo de video: slides (presentación) o avatar (persona IA)' })
+  @IsOptional()
+  @IsString()
+  videoType?: 'slides' | 'avatar';
+
+  @ApiPropertyOptional({ description: 'ID del avatar D-ID (solo para videoType=avatar)' })
+  @IsOptional()
+  @IsString()
+  avatarId?: string;
 }
