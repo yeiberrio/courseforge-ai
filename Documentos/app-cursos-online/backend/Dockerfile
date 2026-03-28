@@ -15,13 +15,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-COPY prisma ./prisma/
-
 RUN npm ci
+
+COPY prisma ./prisma/
 RUN npx prisma generate
 
 COPY . .
-RUN npm run build
+RUN npx nest build
 
 # ── Stage 2: Production ────────────────────────────────────────
 FROM node:18-slim AS runner
