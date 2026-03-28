@@ -44,8 +44,11 @@ interface ViralVideo {
 
 interface GeneratedModule {
   title: string;
-  objectives: string[];
-  topics: string[];
+  objectives?: string[];
+  topics?: string[];
+  key_points?: string[];
+  content?: string;
+  reflection_questions?: string[];
 }
 
 interface ProcessedDocument {
@@ -192,7 +195,7 @@ export default function ProcesarViralPage() {
     setProcessing(true);
 
     try {
-      const result = await api.post<ProcessedDocument>(
+      const raw = await api.post<any>(
         "/viral/process",
         {
           viralVideoId: video.id,
@@ -201,6 +204,22 @@ export default function ProcesarViralPage() {
         },
         token,
       );
+      // Map backend response to frontend format
+      const doc = raw.generatedDocument || raw;
+      const result: ProcessedDocument = {
+        id: raw.id,
+        title: doc.title || "Curso generado",
+        description: doc.description || "",
+        targetAudience: doc.target_audience || doc.targetAudience || "",
+        modules: (doc.modules || []).map((m: any) => ({
+          title: m.title || "",
+          objectives: m.objectives || m.key_points || [],
+          topics: m.key_points || m.topics || [],
+          key_points: m.key_points || [],
+        })),
+        contentLength: raw.contentLength || contentLength,
+        estimatedDuration: raw.targetDuration || "",
+      };
       setDocument(result);
       setStep("done");
     } catch (err: unknown) {
@@ -222,11 +241,26 @@ export default function ProcesarViralPage() {
     setStep("process");
 
     try {
-      const result = await api.patch<ProcessedDocument>(
+      const raw = await api.patch<any>(
         `/viral/process/${document.id}/length`,
         { contentLength: newLength },
         token,
       );
+      const doc = raw.generatedDocument || raw;
+      const result: ProcessedDocument = {
+        id: raw.id,
+        title: doc.title || "Curso generado",
+        description: doc.description || "",
+        targetAudience: doc.target_audience || doc.targetAudience || "",
+        modules: (doc.modules || []).map((m: any) => ({
+          title: m.title || "",
+          objectives: m.objectives || m.key_points || [],
+          topics: m.key_points || m.topics || [],
+          key_points: m.key_points || [],
+        })),
+        contentLength: raw.contentLength || newLength,
+        estimatedDuration: raw.targetDuration || "",
+      };
       setDocument(result);
       setStep("done");
     } catch (err: unknown) {
@@ -597,7 +631,7 @@ export default function ProcesarViralPage() {
               </p>
               <p className="text-xs text-green-600">
                 Se genero la estructura del curso con{" "}
-                {document.modules.length} modulos en formato{" "}
+                {document.modules?.length || 0} modulos en formato{" "}
                 {CONTENT_LENGTH_OPTIONS.find(
                   (o) => o.key === document.contentLength,
                 )?.label || document.contentLength}
