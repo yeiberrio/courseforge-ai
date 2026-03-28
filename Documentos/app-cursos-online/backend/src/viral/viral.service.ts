@@ -304,8 +304,8 @@ export class ViralService {
     contentLength: ContentLength;
     language?: string;
   }) {
-    if (!this.anthropicApiKey) {
-      throw new BadRequestException('ANTHROPIC_API_KEY no configurada para procesamiento');
+    if (!this.openaiApiKey && !this.anthropicApiKey) {
+      throw new BadRequestException('Se requiere OPENAI_API_KEY o ANTHROPIC_API_KEY para procesamiento');
     }
 
     let video = await this.prisma.viralVideo.findUnique({ where: { id: options.viralVideoId } });
@@ -377,33 +377,62 @@ FORMATO DE SALIDA (JSON estricto):
 }`;
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': this.anthropicApiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 8000,
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: `Información factual extraída del video "${video.title}" (${video.category}):\n\n${options.transcription.substring(0, 10000)}\n\nGenera el contenido original del curso en formato JSON.`,
-            },
-          ],
-        }),
-      });
+      const userMessage = `Información factual extraída del video "${video.title}" (${video.category}):\n\n${options.transcription.substring(0, 10000)}\n\nGenera el contenido original del curso en formato JSON.`;
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(`Claude API failed: ${err.error?.message || response.statusText}`);
+      let content = '';
+
+      if (this.openaiApiKey) {
+        // Use OpenAI
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.openaiApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o',
+            max_tokens: 8000,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userMessage },
+            ],
+          }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(`OpenAI API failed: ${err.error?.message || response.statusText}`);
+        }
+
+        const data = await response.json();
+        content = data.choices?.[0]?.message?.content || '';
+      } else {
+        // Fallback to Anthropic
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': this.anthropicApiKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 8000,
+            system: systemPrompt,
+            messages: [
+              { role: 'user', content: userMessage },
+            ],
+          }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(`Claude API failed: ${err.error?.message || response.statusText}`);
+        }
+
+        const data = await response.json();
+        content = data.content?.[0]?.text || '';
       }
-
-      const data = await response.json();
-      const content = data.content?.[0]?.text || '';
 
       // Parse JSON from response
       let generatedDoc: any;
