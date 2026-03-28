@@ -669,7 +669,7 @@ export default function ProcesarViralPage() {
                       {mod.title}
                     </p>
                   </div>
-                  {mod.objectives.length > 0 && (
+                  {mod.objectives && mod.objectives.length > 0 && (
                     <div className="mb-2">
                       <p className="mb-1 text-xs font-medium text-gray-500">
                         Objetivos:
