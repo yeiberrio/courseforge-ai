@@ -619,8 +619,8 @@ export default function ProcesarViralPage() {
         </div>
       )}
 
-      {/* STEP 4: Done */}
-      {!loadingVideo && step === "done" && document && (
+      {/* STEP 4: Done — render generated document */}
+      {!loadingVideo && step === "done" && document != null && (
         <div className="space-y-6">
           {/* Success banner */}
           <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-4">
@@ -630,12 +630,15 @@ export default function ProcesarViralPage() {
                 Contenido generado exitosamente
               </p>
               <p className="text-xs text-green-600">
-                Se genero la estructura del curso con{" "}
-                {document.modules?.length || 0} modulos en formato{" "}
+                {"Se genero la estructura del curso con "}
+                {Array.isArray(document.modules) ? document.modules.length : 0}
+                {" modulos en formato "}
                 {CONTENT_LENGTH_OPTIONS.find(
                   (o) => o.key === document.contentLength,
                 )?.label || document.contentLength}
-                . Duracion estimada: {document.estimatedDuration}.
+                {". Duracion estimada: "}
+                {document.estimatedDuration || "N/A"}
+                {"."}
               </p>
             </div>
           </div>
@@ -643,50 +646,54 @@ export default function ProcesarViralPage() {
           {/* Document preview */}
           <div className="rounded-xl border bg-white p-6 shadow-sm">
             <h2 className="mb-1 text-xl font-bold text-gray-900">
-              {document.title}
+              {document.title || "Sin titulo"}
             </h2>
             <p className="mb-2 text-sm text-gray-500">
-              {document.description}
+              {document.description || ""}
             </p>
-            <p className="mb-5 text-xs text-gray-400">
-              Publico objetivo: {document.targetAudience}
-            </p>
+            {document.targetAudience && (
+              <p className="mb-5 text-xs text-gray-400">
+                Publico objetivo: {document.targetAudience}
+              </p>
+            )}
 
-            <h3 className="mb-3 text-sm font-semibold text-gray-700">
-              Modulos del curso ({document.modules?.length || 0}):
-            </h3>
-            <div className="space-y-3">
-              {(document.modules || []).map((mod, i) => (
-                <div
-                  key={i}
-                  className="rounded-lg border bg-gray-50 p-4"
-                >
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
-                      {i + 1}
-                    </span>
-                    <p className="text-sm font-medium text-gray-900">
-                      {mod.title}
-                    </p>
-                  </div>
-                  {mod.objectives && mod.objectives.length > 0 && (
-                    <div className="mb-2">
-                      <p className="mb-1 text-xs font-medium text-gray-500">
-                        Objetivos:
-                      </p>
-                      <ul className="space-y-0.5">
-                        {mod.objectives.map((obj, j) => (
-                          <li key={j} className="text-xs text-gray-500">
-                            - {obj}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {mod.topics && mod.topics.length > 0 && (
-                    <div>
-                      <p className="mb-1 text-xs font-medium text-gray-500">
-                        Temas:
+            {Array.isArray(document.modules) && document.modules.length > 0 ? (
+              <>
+                <h3 className="mb-3 text-sm font-semibold text-gray-700">
+                  Modulos del curso ({document.modules.length}):
+                </h3>
+                <div className="space-y-3">
+                  {document.modules.map((mod, i) => (
+                    <div
+                      key={i}
+                      className="rounded-lg border bg-gray-50 p-4"
+                    >
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
+                          {i + 1}
+                        </span>
+                        <p className="text-sm font-medium text-gray-900">
+                          {mod.title}
+                        </p>
+                      </div>
+                      {Array.isArray(mod.objectives) && mod.objectives.length > 0 && (
+                        <div className="mb-2">
+                          <p className="mb-1 text-xs font-medium text-gray-500">
+                            Objetivos:
+                          </p>
+                          <ul className="space-y-0.5">
+                            {mod.objectives.map((obj, j) => (
+                              <li key={j} className="text-xs text-gray-500">
+                                - {obj}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {Array.isArray(mod.topics) && mod.topics.length > 0 && (
+                        <div>
+                          <p className="mb-1 text-xs font-medium text-gray-500">
+                            Temas:
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {mod.topics.map((topic, k) => (
@@ -700,9 +707,13 @@ export default function ProcesarViralPage() {
                       </div>
                     </div>
                   )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <p className="text-sm text-gray-400">No se generaron modulos.</p>
+            )}
           </div>
 
           {/* Actions */}
