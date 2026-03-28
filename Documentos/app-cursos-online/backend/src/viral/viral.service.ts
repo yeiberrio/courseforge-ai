@@ -251,9 +251,17 @@ export class ViralService {
 
   /**
    * Transcribe a viral video using YouTube captions or Whisper.
+   * Accepts either database UUID or YouTube video ID.
    */
   async transcribeVideo(videoId: string) {
-    const video = await this.prisma.viralVideo.findUnique({ where: { id: videoId } });
+    let video = await this.prisma.viralVideo.findUnique({ where: { id: videoId } });
+    if (!video) {
+      // Fallback: try finding by YouTube video ID
+      video = await this.prisma.viralVideo.findFirst({
+        where: { youtube_video_id: videoId },
+        orderBy: { created_at: 'desc' },
+      });
+    }
     if (!video) throw new NotFoundException('Video no encontrado');
 
     await this.prisma.viralVideo.update({
@@ -298,7 +306,13 @@ export class ViralService {
       throw new BadRequestException('ANTHROPIC_API_KEY no configurada para procesamiento');
     }
 
-    const video = await this.prisma.viralVideo.findUnique({ where: { id: options.viralVideoId } });
+    let video = await this.prisma.viralVideo.findUnique({ where: { id: options.viralVideoId } });
+    if (!video) {
+      video = await this.prisma.viralVideo.findFirst({
+        where: { youtube_video_id: options.viralVideoId },
+        orderBy: { created_at: 'desc' },
+      });
+    }
     if (!video) throw new NotFoundException('Video viral no encontrado');
 
     // Create processing record
