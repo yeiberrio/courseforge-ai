@@ -7,6 +7,8 @@ import {
   Param,
   Query,
   Logger,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ViralService } from './viral.service';
@@ -36,7 +38,16 @@ export class ViralController {
       maxResults?: number;
     },
   ) {
-    return this.viralService.searchViral(userId, body);
+    try {
+      return await this.viralService.searchViral(userId, body);
+    } catch (error) {
+      this.logger.error(`Viral search failed: ${error.message}`);
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        error.message || 'Error al buscar contenido viral',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
   }
 
   @Get('search/:id/results')

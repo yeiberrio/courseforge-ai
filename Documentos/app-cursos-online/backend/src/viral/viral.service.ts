@@ -110,18 +110,16 @@ export class ViralService {
       key: this.youtubeApiKey,
     });
 
-    // Add category filter
-    const catIds = CATEGORY_IDS[category];
-    if (catIds?.length) {
-      searchParams.set('videoCategoryId', catIds[0]);
-    }
+    // Note: videoCategoryId is NOT compatible with type=video in YouTube Search API
+    // Category filtering is done via keywords instead
 
-    const searchResponse = await fetch(
+    let searchResponse = await fetch(
       `https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`,
     );
 
     if (!searchResponse.ok) {
       const err = await searchResponse.json().catch(() => ({}));
+      this.logger.error(`YouTube search error: ${JSON.stringify(err)}`);
       throw new Error(`YouTube search failed: ${err.error?.message || searchResponse.statusText}`);
     }
 
