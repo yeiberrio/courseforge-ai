@@ -123,6 +123,7 @@ function formatDate(dateStr: string): string {
   });
 }
 
+// Build: 2026-03-28T08:30:00Z - Force new chunk hash
 export default function ProcesarViralPage() {
   const { token } = useAuth();
   const router = useRouter();
