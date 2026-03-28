@@ -264,8 +264,10 @@ export class ViralService {
     }
     if (!video) throw new NotFoundException('Video no encontrado');
 
+    const dbId = video.id;
+
     await this.prisma.viralVideo.update({
-      where: { id: videoId },
+      where: { id: dbId },
       data: { transcription_status: 'PROCESSING' },
     });
 
@@ -279,14 +281,14 @@ export class ViralService {
       }
 
       await this.prisma.viralVideo.update({
-        where: { id: videoId },
+        where: { id: dbId },
         data: { transcription_status: 'DONE' },
       });
 
       return { transcription, source: 'captions' };
     } catch (error) {
       await this.prisma.viralVideo.update({
-        where: { id: videoId },
+        where: { id: dbId },
         data: { transcription_status: 'FAILED' },
       });
       throw error;
@@ -318,7 +320,7 @@ export class ViralService {
     // Create processing record
     const processing = await this.prisma.viralContentProcessing.create({
       data: {
-        viral_video_id: options.viralVideoId,
+        viral_video_id: video.id,
         user_id: userId,
         raw_transcription: options.transcription,
         content_length: options.contentLength,
