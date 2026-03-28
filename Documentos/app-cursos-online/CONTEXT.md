@@ -900,7 +900,7 @@ Modelos implementados:
 | Creator | `creator@courseforge.com` | `Creator2026*` |
 | Student | `student@courseforge.com` | `Student2026*` |
 
-### 13.9 Estado de implementación (actualizado 27/03/2026)
+### 13.9 Estado de implementación (actualizado 28/03/2026)
 
 **Generación de video con IA (completado):**
 - [x] Generación de guiones con OpenAI (GPT)
@@ -911,23 +911,55 @@ Modelos implementados:
 
 **YouTube — Publicación y contenido viral (backend + frontend completados):**
 - [x] Backend: módulo YouTube (controller, service, module)
-- [x] Backend: módulo Viral (búsqueda, trending, historial, procesamiento con Claude)
+- [x] Backend: módulo Viral (búsqueda, trending, historial, procesamiento con IA)
+- [x] Backend: endpoint GET /viral/videos/:youtubeVideoId (busca por YouTube ID o UUID)
+- [x] Backend: transcribeVideo y processContent aceptan tanto UUID como YouTube video ID
+- [x] Backend: procesamiento de contenido viral con OpenAI GPT-4o (fallback a Anthropic Claude)
+- [x] Backend: error handling robusto en viral controller (try/catch con HttpException)
+- [x] Backend: removido videoCategoryId incompatible con YouTube Search API type=video
 - [x] Frontend: página principal YouTube con navegación a subpáginas
 - [x] Frontend: páginas de conectar canal, canales, publicar, publicaciones
-- [x] Frontend: página de contenido viral con filtros y búsqueda
-- [x] Frontend: página de procesar video viral
+- [x] Frontend: página de contenido viral con filtros y búsqueda (funcional en producción)
+- [x] Frontend: página de procesar video viral (transcripción funcional, mapeo correcto de respuesta backend)
+- [x] Frontend: null-safe rendering con Array.isArray() para modules en paso 4 (Done)
 - [x] Sidebar: enlaces a YouTube, Contenido Viral, Base de Conocimiento
+
+**YouTube OAuth2 — Conectar canal:**
+- [x] Backend: YOUTUBE_REDIRECT_URI configurado en Railway
+- [x] Backend: redirect URI correcto con prefijo /api/v1/youtube/callback
+- [ ] Google Cloud Console: agregar email como Test User en OAuth consent screen (app en modo Testing → 403 access_denied)
+- [ ] Opción: publicar app OAuth en Google Cloud para acceso general (requiere verificación)
 
 **Base de Conocimiento (backend + frontend completados):**
 - [x] Backend: módulo Knowledge Base (controller, service, module)
 - [x] Frontend: página de base de conocimiento y detalle
 
+**Base de datos producción (Railway):**
+- [x] Migración init (tablas base: users, courses, modules, etc.)
+- [x] Migración add_youtube_viral_kb_tables (6 tablas nuevas: youtube_channels, youtube_publications, viral_searches, viral_videos, viral_content_processing, knowledge_base_documents)
+- [x] prisma migrate deploy se ejecuta automáticamente en CMD del Dockerfile al iniciar container
+- [x] Build script: `rm -rf .next out && next build` (limpia cache antes de compilar)
+
+**Despliegue:**
+- [x] Backend: Railway (Docker, auto-deploy desde main, Dockerfile multi-stage)
+  - Build: npm ci → prisma generate → nest build
+  - CMD: prisma migrate deploy → node dist/src/main.js
+- [x] Frontend: Vercel (static export a /out)
+  - Root Directory: (vacío)
+  - Build Command: `cd Documentos/app-cursos-online/apps/web && npm run build`
+  - Install Command: `cd Documentos/app-cursos-online/apps/web && npm install`
+  - Output Directory: `Documentos/app-cursos-online/apps/web/out`
+  - Framework Preset: Other
+  - next.config.mjs: output 'export', generateBuildId con crypto.randomUUID()
+- [x] Nota: git root está en /home/angel (no en app-cursos-online), paths en git son Documentos/app-cursos-online/...
+
 **APIs configuradas (local + Railway):**
-- [x] OpenAI (guiones, embeddings)
+- [x] OpenAI GPT-4o (generación de guiones + procesamiento de contenido viral)
 - [x] HeyGen (avatar IA)
 - [x] D-ID (avatar IA alternativo)
-- [x] YouTube Data API v3 (búsqueda, publicación)
-- [x] YouTube OAuth2 (Client ID + Secret para publicar en nombre del creador)
+- [x] YouTube Data API v3 (búsqueda viral, trending)
+- [x] YouTube OAuth2 (Client ID + Secret + Redirect URI para publicar en nombre del creador)
+- [ ] Anthropic Claude (fallback para procesamiento viral, no configurada aún)
 
 **APIs pendientes por configurar:**
 - [ ] ElevenLabs (clonación de voz / TTS)
@@ -938,11 +970,14 @@ Modelos implementados:
 - [ ] Upstash Redis (colas BullMQ)
 - [ ] Sentry (monitoreo de errores)
 
+**Pendiente — Procesamiento viral:**
+- [ ] API key de OpenAI válida (la actual está expirada/inválida, requiere nueva key en Railway)
+- [ ] Transcripción real con Whisper API (actualmente usa subtítulos de YouTube o fallback con metadatos)
+
 **Pendiente — Fase 1 restante:**
 - [ ] Player de video en detalle del curso (actualmente muestra URL)
 - [ ] Progreso real de estudiante al ver videos
 - [ ] Aprobar/rechazar módulos en revisión
-- [ ] Ejecutar `prisma db push` en BD de producción (Railway) para crear tablas de viral/youtube/knowledge-base
 
 **Pendiente — Fase 2:**
 - [ ] Agentes IA (ventas, tutor, soporte) con RAG
