@@ -653,10 +653,10 @@ export default function ProcesarViralPage() {
             </p>
 
             <h3 className="mb-3 text-sm font-semibold text-gray-700">
-              Modulos del curso ({document.modules.length}):
+              Modulos del curso ({document.modules?.length || 0}):
             </h3>
             <div className="space-y-3">
-              {document.modules.map((mod, i) => (
+              {(document.modules || []).map((mod, i) => (
                 <div
                   key={i}
                   className="rounded-lg border bg-gray-50 p-4"
