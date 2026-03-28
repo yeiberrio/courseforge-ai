@@ -50,6 +50,13 @@ export class ViralController {
     }
   }
 
+  @Get('videos/:youtubeVideoId')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Obtener video viral por YouTube video ID' })
+  async getVideoByYoutubeId(@Param('youtubeVideoId') youtubeVideoId: string) {
+    return this.viralService.getVideoByYoutubeId(youtubeVideoId);
+  }
+
   @Get('search/:id/results')
   @Roles(UserRole.CREATOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Obtener resultados de una búsqueda viral' })

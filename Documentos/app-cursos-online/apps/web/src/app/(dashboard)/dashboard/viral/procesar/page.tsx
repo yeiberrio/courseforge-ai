@@ -171,7 +171,7 @@ export default function ProcesarViralPage() {
 
     try {
       const result = await api.post<{ transcription: string }>(
-        `/viral/videos/${video.videoId}/transcribe`,
+        `/viral/videos/${video.id}/transcribe`,
         {},
         token,
       );
@@ -195,7 +195,7 @@ export default function ProcesarViralPage() {
       const result = await api.post<ProcessedDocument>(
         "/viral/process",
         {
-          viralVideoId: video.videoId,
+          viralVideoId: video.id,
           transcription,
           contentLength,
         },

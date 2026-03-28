@@ -206,6 +206,29 @@ export class ViralService {
   }
 
   /**
+   * Get a viral video by its YouTube video ID.
+   */
+  async getVideoByYoutubeId(youtubeVideoId: string) {
+    const video = await this.prisma.viralVideo.findFirst({
+      where: { youtube_video_id: youtubeVideoId },
+      orderBy: { created_at: 'desc' },
+    });
+    if (!video) throw new NotFoundException('Video viral no encontrado');
+
+    return {
+      id: video.id,
+      videoId: video.youtube_video_id,
+      title: video.title,
+      channelTitle: video.channel_name,
+      thumbnail: video.thumbnail_url,
+      viewCount: Number(video.view_count),
+      likeCount: video.like_count,
+      duration: this.formatDuration(video.duration_seconds),
+      publishedAt: video.published_at?.toISOString?.() || video.published_at,
+    };
+  }
+
+  /**
    * Get search results.
    */
   async getSearchResults(searchId: string) {
