@@ -80,7 +80,7 @@ export class ViralController {
 
   @Post('process')
   @Roles(UserRole.CREATOR, UserRole.ADMIN)
-  @ApiOperation({ summary: 'Procesar transcripción y generar contenido original con Claude' })
+  @ApiOperation({ summary: 'Procesar transcripción y generar contenido original con IA' })
   async processContent(
     @CurrentUser('id') userId: string,
     @Body() body: {
@@ -90,7 +90,16 @@ export class ViralController {
       language?: string;
     },
   ) {
-    return this.viralService.processContent(userId, body);
+    try {
+      return await this.viralService.processContent(userId, body);
+    } catch (error) {
+      this.logger.error(`Process content failed: ${error.message}`, error.stack);
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        error.message || 'Error al procesar contenido',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
   }
 
   @Put('process/:id/length')
