@@ -188,6 +188,50 @@ export class ViralService {
   }
 
   /**
+   * Single YouTube search API call.
+   */
+  private async searchYouTubeSingle(options: {
+    query: string;
+    publishedAfter: string;
+    maxResults: number;
+    relevanceLanguage?: string;
+    regionCode?: string;
+    eventType?: string;
+  }): Promise<string[]> {
+    const params: Record<string, string> = {
+      part: 'snippet',
+      q: options.query,
+      type: 'video',
+      order: 'viewCount',
+      publishedAfter: options.publishedAfter,
+      maxResults: String(Math.min(options.maxResults, 50)),
+      key: this.youtubeApiKey,
+    };
+
+    if (options.relevanceLanguage) params.relevanceLanguage = options.relevanceLanguage;
+    if (options.regionCode) params.regionCode = options.regionCode;
+    if (options.eventType) {
+      params.eventType = options.eventType;
+    } else {
+      params.videoDuration = 'medium';
+    }
+
+    const searchParams = new URLSearchParams(params);
+    const response = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`,
+    );
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      this.logger.error(`YouTube search error: ${JSON.stringify(err)}`);
+      throw new Error(`YouTube search failed: ${err.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    return (data.items || []).map((item: any) => item.id.videoId).filter(Boolean);
+  }
+
+  /**
    * Search YouTube for viral videos matching criteria.
    */
   async searchViral(userId: string, options: {
@@ -195,8 +239,13 @@ export class ViralService {
     keywords?: string[];
     minViews?: number;
     minLikes?: number;
+    minComments?: number;
     dateRange?: string;
     language?: string;
+    languages?: string[];
+    countries?: string[];
+    eventType?: string;
+    sortBy?: string;
     maxResults?: number;
   }) {
     if (!this.youtubeApiKey) {
@@ -208,69 +257,116 @@ export class ViralService {
       keywords,
       minViews = 100000,
       minLikes = 5000,
+      minComments = 0,
       dateRange = '1m',
       language = 'es',
+      languages = [],
+      countries = [],
+      eventType,
+      sortBy = 'viewCount',
       maxResults = 20,
     } = options;
 
-    // Calculate publishedAfter date using expanded range map
+    // Build language list: use languages array if provided, otherwise fall back to single language
+    const langList = languages.length > 0 ? languages : [language];
+    // Countries: empty = worldwide (no regionCode)
+    const countryList = countries.length > 0 ? countries : [null];
+
+    // Calculate combinations and cap at 6 API calls
+    const combinations: { lang: string | null; country: string | null }[] = [];
+    for (const lang of langList) {
+      for (const country of countryList) {
+        combinations.push({ lang, country });
+      }
+    }
+
+    if (combinations.length > 6) {
+      throw new BadRequestException(
+        `Demasiadas combinaciones de filtros (${combinations.length}). Máximo 6 combinaciones (países × idiomas).`,
+      );
+    }
+
+    // Calculate publishedAfter date
     const hoursBack = DATE_RANGE_MAP[dateRange] || 720;
     const publishedAfter = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
 
-    // Use provided keywords or defaults
+    // Build search query
     const searchKeywords = keywords?.length
       ? keywords
       : VIRAL_KEYWORDS[category] || VIRAL_KEYWORDS.EDUCATIONAL;
-
-    // Search YouTube API
     const searchQuery = searchKeywords.slice(0, 5).join(' | ');
 
-    const searchParams = new URLSearchParams({
-      part: 'snippet',
-      q: searchQuery,
-      type: 'video',
-      order: 'viewCount',
-      relevanceLanguage: language,
-      publishedAfter,
-      maxResults: String(Math.min(maxResults, 50)),
-      videoDuration: 'medium',
-      key: this.youtubeApiKey,
-    });
+    // Execute parallel YouTube API calls
+    const perCallMax = Math.min(Math.floor(maxResults / combinations.length) + 5, 50);
+    const allVideoIds = new Set<string>();
 
-    let searchResponse = await fetch(
-      `https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`,
+    const searchPromises = combinations.map(({ lang, country }) =>
+      this.searchYouTubeSingle({
+        query: searchQuery,
+        publishedAfter,
+        maxResults: perCallMax,
+        relevanceLanguage: lang || undefined,
+        regionCode: country || undefined,
+        eventType: eventType || undefined,
+      }).catch((err) => {
+        this.logger.warn(`YouTube call failed for lang=${lang} country=${country}: ${err.message}`);
+        return [] as string[];
+      }),
     );
 
-    if (!searchResponse.ok) {
-      const err = await searchResponse.json().catch(() => ({}));
-      this.logger.error(`YouTube search error: ${JSON.stringify(err)}`);
-      throw new Error(`YouTube search failed: ${err.error?.message || searchResponse.statusText}`);
+    const results = await Promise.all(searchPromises);
+    for (const ids of results) {
+      for (const id of ids) allVideoIds.add(id);
     }
 
-    const searchData = await searchResponse.json();
-    const videoIds = (searchData.items || [])
-      .map((item: any) => item.id.videoId)
-      .filter(Boolean);
-
-    if (videoIds.length === 0) {
-      return { search: null, videos: [] };
+    if (allVideoIds.size === 0) {
+      return { search: null, videos: [], totalResults: 0, category };
     }
 
-    // Get video statistics
-    const statsResponse = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails,snippet&id=${videoIds.join(',')}&key=${this.youtubeApiKey}`,
-    );
+    // Get video statistics (batch, max 50 per call)
+    const uniqueIds = Array.from(allVideoIds);
+    const allStatsItems: any[] = [];
 
-    if (!statsResponse.ok) throw new Error('Failed to fetch video statistics');
+    for (let i = 0; i < uniqueIds.length; i += 50) {
+      const batch = uniqueIds.slice(i, i + 50);
+      const statsResponse = await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails,snippet,liveStreamingDetails&id=${batch.join(',')}&key=${this.youtubeApiKey}`,
+      );
+      if (statsResponse.ok) {
+        const statsData = await statsResponse.json();
+        allStatsItems.push(...(statsData.items || []));
+      }
+    }
 
-    const statsData = await statsResponse.json();
-
-    // Filter by view/like thresholds
-    const filteredVideos = (statsData.items || []).filter((video: any) => {
+    // Filter by view/like/comment thresholds
+    const filteredVideos = allStatsItems.filter((video: any) => {
       const views = parseInt(video.statistics.viewCount || '0');
       const likes = parseInt(video.statistics.likeCount || '0');
-      return views >= minViews || likes >= minLikes;
+      const comments = parseInt(video.statistics.commentCount || '0');
+      return (views >= minViews || likes >= minLikes) && comments >= minComments;
     });
+
+    // Sort results
+    const sorted = [...filteredVideos].sort((a: any, b: any) => {
+      const aViews = parseInt(a.statistics.viewCount || '0');
+      const bViews = parseInt(b.statistics.viewCount || '0');
+      const aLikes = parseInt(a.statistics.likeCount || '0');
+      const bLikes = parseInt(b.statistics.likeCount || '0');
+      const aComments = parseInt(a.statistics.commentCount || '0');
+      const bComments = parseInt(b.statistics.commentCount || '0');
+      const aEngagement = aViews > 0 ? ((aLikes + aComments) / aViews) * 100 : 0;
+      const bEngagement = bViews > 0 ? ((bLikes + bComments) / bViews) * 100 : 0;
+
+      switch (sortBy) {
+        case 'likeCount': return bLikes - aLikes;
+        case 'commentCount': return bComments - aComments;
+        case 'engagementRate': return bEngagement - aEngagement;
+        default: return bViews - aViews;
+      }
+    });
+
+    // Limit to maxResults
+    const finalVideos = sorted.slice(0, maxResults);
 
     // Create search record
     const search = await this.prisma.viralSearch.create({
@@ -280,16 +376,26 @@ export class ViralService {
         keywords: searchKeywords,
         min_views: minViews,
         min_likes: minLikes,
+        min_comments: minComments,
         date_range: dateRange,
         language,
-        results_count: filteredVideos.length,
+        languages: langList,
+        countries: countries,
+        event_type: eventType || null,
+        sort_by: sortBy,
+        results_count: finalVideos.length,
       },
     });
 
     // Save video results
     const videos: any[] = [];
-    for (const video of filteredVideos) {
+    for (const video of finalVideos) {
       const duration = this.parseDuration(video.contentDetails.duration);
+      const views = parseInt(video.statistics.viewCount || '0');
+      const likes = parseInt(video.statistics.likeCount || '0');
+      const comments = parseInt(video.statistics.commentCount || '0');
+      const isLive = video.snippet.liveBroadcastContent === 'live';
+
       const saved = await this.prisma.viralVideo.create({
         data: {
           search_id: search.id,
@@ -298,9 +404,9 @@ export class ViralService {
           channel_name: video.snippet.channelTitle,
           channel_id: video.snippet.channelId,
           thumbnail_url: video.snippet.thumbnails?.high?.url || video.snippet.thumbnails?.default?.url,
-          view_count: BigInt(video.statistics.viewCount || '0'),
-          like_count: parseInt(video.statistics.likeCount || '0'),
-          comment_count: parseInt(video.statistics.commentCount || '0'),
+          view_count: BigInt(views),
+          like_count: likes,
+          comment_count: comments,
           duration_seconds: duration,
           published_at: new Date(video.snippet.publishedAt),
           category,
@@ -309,10 +415,12 @@ export class ViralService {
       videos.push({
         ...saved,
         view_count: Number(saved.view_count),
+        engagement_rate: views > 0 ? parseFloat(((likes + comments) / views * 100).toFixed(2)) : 0,
+        is_live: isLive,
       } as any);
     }
 
-    this.logger.log(`Viral search: found ${videos.length} videos for category ${category}`);
+    this.logger.log(`Viral search: found ${videos.length} videos for category ${category} (${combinations.length} API calls)`);
 
     const mappedVideos = videos.map((v: any) => ({
       videoId: v.youtube_video_id,
@@ -321,6 +429,9 @@ export class ViralService {
       thumbnail: v.thumbnail_url,
       viewCount: Number(v.view_count),
       likeCount: v.like_count,
+      commentCount: v.comment_count,
+      engagementRate: v.engagement_rate,
+      isLive: v.is_live,
       duration: this.formatDuration(v.duration_seconds),
       publishedAt: v.published_at?.toISOString?.() || v.published_at,
     }));

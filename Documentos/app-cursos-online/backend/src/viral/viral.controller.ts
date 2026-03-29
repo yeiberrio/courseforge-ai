@@ -33,8 +33,13 @@ export class ViralController {
       keywords?: string[];
       minViews?: number;
       minLikes?: number;
+      minComments?: number;
       dateRange?: string;
       language?: string;
+      languages?: string[];
+      countries?: string[];
+      eventType?: string;
+      sortBy?: string;
       maxResults?: number;
     },
   ) {

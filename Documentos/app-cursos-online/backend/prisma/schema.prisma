@@ -611,8 +611,13 @@ model ViralSearch {
   keywords      String[]
   min_views     Int           @default(100000)
   min_likes     Int           @default(5000)
+  min_comments  Int           @default(0)
   date_range    String        @default("30d")
   language      String        @default("es")
+  languages     String[]      @default([])
+  countries     String[]      @default([])
+  event_type    String?
+  sort_by       String        @default("viewCount")
   results_count Int           @default(0)
   created_at    DateTime      @default(now())
 
