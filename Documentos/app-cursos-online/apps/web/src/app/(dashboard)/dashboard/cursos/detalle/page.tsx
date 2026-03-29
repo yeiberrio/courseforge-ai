@@ -236,7 +236,7 @@ export default function CursoDetallePage() {
                 controls
                 autoPlay
                 className="aspect-video w-full"
-                src={`${BASE_URL}${activeModule.video_url}`}
+                src={activeModule.video_url.startsWith('http') ? activeModule.video_url : `${BASE_URL}${activeModule.video_url}`}
                 onError={() => setVideoError(true)}
               >
                 Tu navegador no soporta video HTML5.

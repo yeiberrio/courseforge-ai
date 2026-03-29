@@ -7,6 +7,7 @@ import { VideoAssemblyService } from './video-assembly.service';
 import { AvatarVideoService } from './avatar-video.service';
 import { HeyGenVideoService } from './heygen-video.service';
 import { DocumentParserService } from './document-parser.service';
+import { StorageService } from './storage.service';
 import { HeyGenConfigDto } from './dto/generate-course.dto';
 import { mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -35,6 +36,7 @@ export class GenerationService {
     private avatarVideo: AvatarVideoService,
     private heygenVideo: HeyGenVideoService,
     private documentParser: DocumentParserService,
+    private storage: StorageService,
   ) {}
 
   getProgress(courseId: string): GenerationProgress | null {
@@ -246,11 +248,21 @@ export class GenerationService {
             });
           }
 
+          // Upload video to Supabase Storage (if configured), otherwise use local path
+          let finalVideoUrl = `/uploads/generated/${courseId}/module_${mod.order}/video.mp4`;
+          if (this.storage.isAvailable()) {
+            const publicUrl = await this.storage.uploadVideo(videoPath, courseId, mod.order);
+            if (publicUrl) {
+              finalVideoUrl = publicUrl;
+              this.logger.log(`[storage] Video uploaded to Supabase: ${publicUrl}`);
+            }
+          }
+
           // Update module with video URL
           await this.prisma.courseModule.update({
             where: { id: mod.id },
             data: {
-              video_url: `/uploads/generated/${courseId}/module_${mod.order}/video.mp4`,
+              video_url: finalVideoUrl,
               status: 'DONE',
               duration_seconds: moduleScript.estimatedDurationMin * 60,
             },
