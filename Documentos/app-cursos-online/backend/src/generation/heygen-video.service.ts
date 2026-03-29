@@ -10,6 +10,7 @@ export interface HeyGenVideoOptions {
   heygenVoiceId?: string;
   avatarId?: string;
   avatarType?: 'stock' | 'instant' | 'photo';
+  avatarGender?: 'male' | 'female';
   sceneTemplate?: SceneTemplate;
   pipPosition?: 'bottom_right' | 'bottom_left' | 'top_right' | 'top_left';
   pipSize?: number;
@@ -53,6 +54,9 @@ export class HeyGenVideoService {
   private readonly logger = new Logger(HeyGenVideoService.name);
   private readonly apiKey: string | undefined;
   private readonly apiUrl = 'https://api.heygen.com';
+  // Default Spanish voices for HeyGen (Colombian-style Latam)
+  private readonly defaultHeyGenVoiceMale = '72cbcf091d9d48998ce10d7b5c2d569e'; // Curious Diego - Friendly
+  private readonly defaultHeyGenVoiceFemale = '6ce26db0cb6f4e7881b85452619f7f19'; // Camila Vega
 
   constructor(private configService: ConfigService) {
     this.apiKey = this.configService.get<string>('HEYGEN_API_KEY');
@@ -249,6 +253,7 @@ export class HeyGenVideoService {
       script,
       avatarId,
       avatarType = 'stock',
+      avatarGender = 'female',
       heygenVoiceId,
       voice,
       voiceSource = 'heygen',
@@ -261,7 +266,7 @@ export class HeyGenVideoService {
     } = options;
 
     this.logger.log(
-      `[heygen] Creating video for module ${moduleOrder}, avatar: ${avatarId}, template: ${sceneTemplate}`,
+      `[heygen] Creating video for module ${moduleOrder}, avatar: ${avatarId}, gender: ${avatarGender}, template: ${sceneTemplate}`,
     );
 
     // Build the video generation request
@@ -275,6 +280,7 @@ export class HeyGenVideoService {
       emotion,
       speed,
       background,
+      avatarGender,
     );
 
     const response = await fetch(`${this.apiUrl}/v2/video/generate`, {
@@ -404,28 +410,25 @@ export class HeyGenVideoService {
     emotion: string = 'neutral',
     speed: number = 1.0,
     background: string = 'studio',
+    avatarGender: 'male' | 'female' = 'female',
   ) {
     // Determine avatar configuration based on type
     const avatarConfig: Record<string, unknown> =
       avatarType === 'instant' || avatarType === 'photo'
         ? { type: 'talking_photo', talking_photo_id: avatarId }
-        : { type: 'avatar', avatar_id: avatarId || 'default' };
+        : { type: 'avatar', avatar_id: avatarId || 'Abigail_expressive_2024112501' };
 
-    // Voice configuration
-    const voiceConfig: Record<string, unknown> =
-      voiceSource === 'heygen' && heygenVoiceId
-        ? {
-            type: 'text',
-            input_text: script.substring(0, 5000),
-            voice_id: heygenVoiceId,
-            speed,
-          }
-        : {
-            type: 'text',
-            input_text: script.substring(0, 5000),
-            voice_id: edgeTtsVoice || 'es-CO-GonzaloNeural',
-            speed,
-          };
+    // Voice configuration — always use a valid HeyGen voice_id, matching avatar gender
+    const defaultVoice = avatarGender === 'male'
+      ? this.defaultHeyGenVoiceMale
+      : this.defaultHeyGenVoiceFemale;
+    const resolvedVoiceId = heygenVoiceId || defaultVoice;
+    const voiceConfig: Record<string, unknown> = {
+      type: 'text',
+      input_text: script.substring(0, 5000),
+      voice_id: resolvedVoiceId,
+      speed,
+    };
 
     // Add emotion if supported
     if (emotion !== 'neutral') {

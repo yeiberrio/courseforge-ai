@@ -210,6 +210,7 @@ export default function GenerarCursoPage() {
                 heygenConfig: {
                   avatarType: heygenAvatarType,
                   avatarId: heygenAvatarId,
+                  avatarGender: heygenAvatars.find(a => a.avatar_id === heygenAvatarId)?.gender === "male" ? "male" : "female",
                   sceneTemplate,
                   pipPosition: sceneTemplate === "pip" ? pipPosition : undefined,
                   background: heygenBackground,

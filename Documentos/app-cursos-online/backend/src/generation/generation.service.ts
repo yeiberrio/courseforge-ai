@@ -219,6 +219,7 @@ export class GenerationService {
               heygenVoiceId: heygenConfig?.heygenVoiceId,
               avatarId: heygenConfig?.avatarId,
               avatarType: heygenConfig?.avatarType || 'stock',
+              avatarGender: heygenConfig?.avatarGender || 'female',
               sceneTemplate: heygenConfig?.sceneTemplate || 'talking_head',
               pipPosition: heygenConfig?.pipPosition,
               pipSize: heygenConfig?.pipSize,

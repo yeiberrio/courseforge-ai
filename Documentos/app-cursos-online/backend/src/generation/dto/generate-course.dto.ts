@@ -13,6 +13,11 @@ export class HeyGenConfigDto {
   @IsString()
   avatarId?: string;
 
+  @ApiPropertyOptional({ enum: ['male', 'female'], default: 'female', description: 'Género del avatar (para seleccionar voz automáticamente)' })
+  @IsOptional()
+  @IsString()
+  avatarGender?: 'male' | 'female';
+
   @ApiPropertyOptional({
     enum: ['presenter', 'split_screen', 'pip', 'talking_head', 'news_anchor', 'whiteboard'],
     default: 'talking_head',
