@@ -16,10 +16,10 @@ import {
 
 interface YouTubeChannel {
   id: string;
-  channelId: string;
-  title: string;
-  thumbnailUrl: string;
-  connectedAt: string;
+  channel_id: string;
+  channel_title: string;
+  channel_thumbnail: string;
+  connected_at: string;
 }
 
 export default function CanalesYouTubePage() {
@@ -126,21 +126,23 @@ export default function CanalesYouTubePage() {
             >
               <div className="flex items-center gap-4">
                 <img
-                  src={channel.thumbnailUrl}
-                  alt={channel.title}
+                  src={channel.channel_thumbnail}
+                  alt={channel.channel_title}
                   className="h-12 w-12 rounded-full object-cover"
                 />
                 <div>
                   <h3 className="font-medium text-gray-900">
-                    {channel.title}
+                    {channel.channel_title}
                   </h3>
                   <p className="text-sm text-gray-500">
                     Conectado el{" "}
-                    {new Date(channel.connectedAt).toLocaleDateString("es-CO", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
+                    {channel.connected_at
+                      ? new Date(channel.connected_at).toLocaleDateString("es-CO", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        })
+                      : "fecha desconocida"}
                   </p>
                 </div>
               </div>

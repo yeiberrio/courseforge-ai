@@ -5,8 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/lib/api";
 import type { Course, CourseModule } from "@/types";
-import { ArrowLeft, Play, CheckCircle2, Clock, Film } from "lucide-react";
+import { ArrowLeft, Play, CheckCircle2, Clock, Film, CheckCircle, Archive, Trash2, Send, AlertTriangle } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1";
 const BASE_URL = API_URL.replace("/api/v1", "");
@@ -31,9 +32,12 @@ export default function CursoDetallePage() {
   const searchParams = useSearchParams();
   const id = searchParams.get("id");
   const { token } = useAuth();
+  const router = useRouter();
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeModule, setActiveModule] = useState<CourseModule | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState(false);
 
   useEffect(() => {
     if (!token || !id) return;
@@ -63,6 +67,40 @@ export default function CursoDetallePage() {
     );
   }
 
+  const handleStatusChange = async (newStatus: string) => {
+    if (!token || !id) return;
+    const confirmMsg =
+      newStatus === "APPROVED" ? "¿Aprobar este curso?" :
+      newStatus === "ARCHIVED" ? "¿Archivar este curso?" :
+      newStatus === "PUBLISHED" ? "¿Publicar este curso?" :
+      "¿Cambiar el estado del curso?";
+    if (!confirm(confirmMsg)) return;
+
+    setActionLoading(newStatus);
+    try {
+      const updated = await api.patch<Course>(`/courses/${id}`, { status: newStatus }, token);
+      setCourse(updated);
+    } catch (e: any) {
+      alert(e.message || "Error al cambiar estado");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!token || !id) return;
+    if (!confirm("¿Eliminar este curso permanentemente? Esta acción no se puede deshacer.")) return;
+
+    setActionLoading("DELETE");
+    try {
+      await api.delete(`/courses/${id}`, token);
+      router.push("/dashboard/cursos");
+    } catch (e: any) {
+      alert(e.message || "Error al eliminar");
+      setActionLoading(null);
+    }
+  };
+
   const st = statusLabels[course.status] || statusLabels.DRAFT;
 
   return (
@@ -90,6 +128,60 @@ export default function CursoDetallePage() {
           >
             {st.label}
           </span>
+        </div>
+
+        {/* Action buttons */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {course.status === "REVIEW" && (
+            <>
+              <button
+                onClick={() => handleStatusChange("APPROVED")}
+                disabled={!!actionLoading}
+                className="flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                <CheckCircle className="h-4 w-4" />
+                {actionLoading === "APPROVED" ? "Aprobando..." : "Aprobar"}
+              </button>
+              <button
+                onClick={() => handleStatusChange("ARCHIVED")}
+                disabled={!!actionLoading}
+                className="flex items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600 disabled:opacity-50"
+              >
+                <Archive className="h-4 w-4" />
+                {actionLoading === "ARCHIVED" ? "Archivando..." : "Archivar"}
+              </button>
+            </>
+          )}
+          {course.status === "APPROVED" && (
+            <button
+              onClick={() => handleStatusChange("PUBLISHED")}
+              disabled={!!actionLoading}
+              className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" />
+              {actionLoading === "PUBLISHED" ? "Publicando..." : "Publicar"}
+            </button>
+          )}
+          {(course.status === "ARCHIVED" || course.status === "DRAFT") && (
+            <button
+              onClick={handleDelete}
+              disabled={!!actionLoading}
+              className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              {actionLoading === "DELETE" ? "Eliminando..." : "Eliminar"}
+            </button>
+          )}
+          {course.status === "PUBLISHED" && (
+            <button
+              onClick={() => handleStatusChange("ARCHIVED")}
+              disabled={!!actionLoading}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <Archive className="h-4 w-4" />
+              {actionLoading === "ARCHIVED" ? "Archivando..." : "Archivar"}
+            </button>
+          )}
         </div>
 
         {course.description_short && (
@@ -126,15 +218,30 @@ export default function CursoDetallePage() {
         <div className="lg:col-span-2">
           {activeModule?.video_url ? (
             <div className="overflow-hidden rounded-xl border bg-black shadow-sm">
+              {videoError ? (
+                <div className="flex aspect-video items-center justify-center bg-gray-900">
+                  <div className="text-center">
+                    <AlertTriangle className="mx-auto mb-2 h-10 w-10 text-yellow-400" />
+                    <p className="text-sm text-gray-300">
+                      No se pudo cargar el video
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      El archivo puede haber sido eliminado o el servidor no está disponible
+                    </p>
+                  </div>
+                </div>
+              ) : (
               <video
                 key={activeModule.id}
                 controls
                 autoPlay
                 className="aspect-video w-full"
                 src={`${BASE_URL}${activeModule.video_url}`}
+                onError={() => setVideoError(true)}
               >
                 Tu navegador no soporta video HTML5.
               </video>
+              )}
               <div className="bg-white p-4">
                 <h3 className="font-semibold text-gray-900">
                   #{activeModule.order} — {activeModule.title}
@@ -173,7 +280,7 @@ export default function CursoDetallePage() {
               return (
                 <button
                   key={mod.id}
-                  onClick={() => mod.video_url && setActiveModule(mod)}
+                  onClick={() => { if (mod.video_url) { setVideoError(false); setActiveModule(mod); } }}
                   disabled={!mod.video_url}
                   className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${
                     isActive
