@@ -268,14 +268,41 @@ export class GenerationService {
             },
           });
         } catch (videoError) {
-          this.logger.warn(`Video generation (${videoType}) failed for module ${mod.title}: ${videoError.message}`);
-          await this.prisma.courseModule.update({
-            where: { id: mod.id },
-            data: {
-              status: 'DONE',
-              duration_seconds: moduleScript.estimatedDurationMin * 60,
-            },
-          });
+          this.logger.warn(`Video generation (${videoType}) failed for module ${mod.title}: ${videoError.message}. Falling back to slides...`);
+
+          // Fallback: generate slides-based video when avatar fails
+          try {
+            await this.videoAssembly.assembleVideo({
+              slidesDir,
+              audioPath,
+              outputPath: videoPath,
+            });
+
+            let finalVideoUrl = `/uploads/generated/${courseId}/module_${mod.order}/video.mp4`;
+            if (this.storage.isAvailable()) {
+              const publicUrl = await this.storage.uploadVideo(videoPath, courseId, mod.order);
+              if (publicUrl) finalVideoUrl = publicUrl;
+            }
+
+            await this.prisma.courseModule.update({
+              where: { id: mod.id },
+              data: {
+                video_url: finalVideoUrl,
+                status: 'DONE',
+                duration_seconds: moduleScript.estimatedDurationMin * 60,
+              },
+            });
+            this.logger.log(`Fallback slides video created for module ${mod.title}`);
+          } catch (fallbackError) {
+            this.logger.error(`Fallback slides also failed for module ${mod.title}: ${fallbackError.message}`);
+            await this.prisma.courseModule.update({
+              where: { id: mod.id },
+              data: {
+                status: 'FAILED',
+                duration_seconds: moduleScript.estimatedDurationMin * 60,
+              },
+            });
+          }
         }
 
         // Create video job record
