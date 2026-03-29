@@ -2,6 +2,8 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { ViralCategory, ContentLength } from '@prisma/client';
+import { writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 const VIRAL_KEYWORDS: Record<string, string[]> = {
   RELIGIOUS: [
@@ -19,12 +21,141 @@ const VIRAL_KEYWORDS: Record<string, string[]> = {
     'actualidad', 'reportaje', 'investigación', 'política', 'economía mundial',
     'tecnología', 'cambio climático', 'sociedad',
   ],
+  TECHNOLOGY: [
+    'inteligencia artificial', 'programación', 'desarrollo web', 'machine learning',
+    'ciberseguridad', 'blockchain', 'apps', 'software', 'hardware', 'gadgets',
+    'startup', 'innovación', 'cloud computing', 'python', 'javascript',
+  ],
+  HEALTH: [
+    'salud', 'bienestar', 'nutrición', 'ejercicio', 'fitness', 'meditación',
+    'yoga', 'dieta', 'medicina natural', 'salud mental', 'psicología',
+    'alimentación saludable', 'hábitos saludables', 'dormir mejor',
+  ],
+  BUSINESS: [
+    'emprendimiento', 'negocios', 'marketing digital', 'ventas', 'liderazgo',
+    'startup', 'e-commerce', 'branding', 'plan de negocios', 'networking',
+    'productividad', 'gestión empresarial', 'estrategia', 'inversión',
+  ],
+  ENTERTAINMENT: [
+    'entretenimiento', 'películas', 'series', 'cine', 'televisión', 'celebridades',
+    'cultura pop', 'viral', 'tendencias', 'retos', 'challenges', 'reacción',
+    'review', 'crítica', 'top 10',
+  ],
+  SCIENCE: [
+    'ciencia', 'física', 'química', 'biología', 'astronomía', 'naturaleza',
+    'experimentos', 'descubrimientos', 'universo', 'espacio', 'genética',
+    'evolución', 'medio ambiente', 'cambio climático', 'energía renovable',
+  ],
+  SPORTS: [
+    'fútbol', 'deportes', 'NBA', 'Champions League', 'olimpiadas', 'boxeo',
+    'MMA', 'tenis', 'ciclismo', 'entrenamiento', 'goles', 'highlights',
+    'resumen deportivo', 'fichajes', 'mundial',
+  ],
+  COOKING: [
+    'recetas', 'cocina', 'gastronomía', 'cocinar', 'chef', 'comida',
+    'repostería', 'receta fácil', 'cocina casera', 'comida saludable',
+    'postres', 'platos típicos', 'street food', 'restaurantes',
+  ],
+  MUSIC: [
+    'música', 'canción', 'artista', 'concierto', 'álbum', 'letra',
+    'producción musical', 'beat', 'rap', 'reggaeton', 'rock', 'pop',
+    'cover', 'tutorial música', 'instrumentos',
+  ],
+  TRAVEL: [
+    'viajes', 'turismo', 'destinos', 'aventura', 'mochilero', 'hotel',
+    'vuelos baratos', 'guía de viaje', 'lugares increíbles', 'naturaleza',
+    'playa', 'montaña', 'ciudades', 'cultura', 'tips de viaje',
+  ],
+  FINANCE: [
+    'finanzas personales', 'inversiones', 'bolsa de valores', 'criptomonedas',
+    'bitcoin', 'ahorro', 'dinero', 'trading', 'fondos de inversión',
+    'independencia financiera', 'deudas', 'presupuesto', 'economía',
+  ],
+  MOTIVATION: [
+    'motivación', 'superación personal', 'desarrollo personal', 'éxito',
+    'mentalidad', 'hábitos', 'disciplina', 'autoestima', 'confianza',
+    'metas', 'propósito de vida', 'inspiración', 'coaching', 'mindset',
+  ],
+  COMEDY: [
+    'comedia', 'humor', 'chistes', 'parodia', 'sketch', 'stand up',
+    'bromas', 'fails', 'compilación graciosa', 'memes', 'viral gracioso',
+    'risa', 'entretenimiento', 'sátira',
+  ],
+  GAMING: [
+    'videojuegos', 'gaming', 'gameplay', 'lets play', 'esports',
+    'minecraft', 'fortnite', 'gta', 'call of duty', 'ps5', 'xbox',
+    'nintendo', 'review juegos', 'trucos gaming', 'speedrun',
+  ],
+  FASHION: [
+    'moda', 'tendencias moda', 'outfit', 'estilo', 'ropa', 'accesorios',
+    'belleza', 'maquillaje', 'skincare', 'haul', 'shopping',
+    'diseño de moda', 'lookbook', 'fashion tips',
+  ],
+  DIY: [
+    'hazlo tú mismo', 'DIY', 'manualidades', 'decoración', 'bricolaje',
+    'proyectos caseros', 'reciclaje creativo', 'organización', 'trucos hogar',
+    'reparaciones', 'ideas creativas', 'artesanía', 'crafts',
+  ],
+  POLITICS: [
+    'política', 'gobierno', 'elecciones', 'democracia', 'leyes',
+    'congreso', 'presidente', 'debate político', 'geopolítica',
+    'relaciones internacionales', 'diplomacia', 'derechos humanos',
+  ],
+  ENVIRONMENT: [
+    'medio ambiente', 'ecología', 'cambio climático', 'sostenibilidad',
+    'energía renovable', 'reciclaje', 'contaminación', 'naturaleza',
+    'animales', 'biodiversidad', 'conservación', 'planeta',
+  ],
 };
 
 const CATEGORY_IDS: Record<string, string[]> = {
-  RELIGIOUS: ['27', '22', '29'],   // Education, People & Blogs, Nonprofits
-  EDUCATIONAL: ['27', '28', '26'], // Education, Science & Technology, Howto
-  NEWS: ['25', '28'],              // News & Politics, Science & Technology
+  RELIGIOUS: ['27', '22', '29'],
+  EDUCATIONAL: ['27', '28', '26'],
+  NEWS: ['25', '28'],
+  TECHNOLOGY: ['28', '27'],
+  HEALTH: ['26', '27'],
+  BUSINESS: ['27', '22'],
+  ENTERTAINMENT: ['24', '23', '22'],
+  SCIENCE: ['28', '27'],
+  SPORTS: ['17'],
+  COOKING: ['26', '22'],
+  MUSIC: ['10'],
+  TRAVEL: ['19', '22'],
+  FINANCE: ['27', '22'],
+  MOTIVATION: ['27', '22'],
+  COMEDY: ['23', '24'],
+  GAMING: ['20'],
+  FASHION: ['26', '22'],
+  DIY: ['26', '22'],
+  POLITICS: ['25'],
+  ENVIRONMENT: ['28', '29'],
+};
+
+// Date range mapping: key -> hours back
+const DATE_RANGE_MAP: Record<string, number> = {
+  '12h': 12,
+  '24h': 24,
+  '2d': 48,
+  '3d': 72,
+  '4d': 96,
+  '7d': 168,
+  '15d': 360,
+  '1m': 720,
+  '2m': 1440,
+  '3m': 2160,
+  '4m': 2880,
+  '5m': 3600,
+  '6m': 4320,
+  '7m': 5040,
+  '8m': 5760,
+  '9m': 6480,
+  '10m': 7200,
+  '11m': 7920,
+  '12m': 8760,
+  // Legacy support
+  '30d': 720,
+  '90d': 2160,
+  '365d': 8760,
 };
 
 interface YouTubeSearchResult {
@@ -77,18 +208,14 @@ export class ViralService {
       keywords,
       minViews = 100000,
       minLikes = 5000,
-      dateRange = '30d',
+      dateRange = '1m',
       language = 'es',
       maxResults = 20,
     } = options;
 
-    // Calculate publishedAfter date
-    const now = new Date();
-    const rangeMap: Record<string, number> = {
-      '7d': 7, '30d': 30, '90d': 90, '365d': 365,
-    };
-    const daysBack = rangeMap[dateRange] || 30;
-    const publishedAfter = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+    // Calculate publishedAfter date using expanded range map
+    const hoursBack = DATE_RANGE_MAP[dateRange] || 720;
+    const publishedAfter = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
 
     // Use provided keywords or defaults
     const searchKeywords = keywords?.length
@@ -106,12 +233,9 @@ export class ViralService {
       relevanceLanguage: language,
       publishedAfter,
       maxResults: String(Math.min(maxResults, 50)),
-      videoDuration: 'medium', // 4-20 min
+      videoDuration: 'medium',
       key: this.youtubeApiKey,
     });
-
-    // Note: videoCategoryId is NOT compatible with type=video in YouTube Search API
-    // Category filtering is done via keywords instead
 
     let searchResponse = await fetch(
       `https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`,
@@ -190,7 +314,6 @@ export class ViralService {
 
     this.logger.log(`Viral search: found ${videos.length} videos for category ${category}`);
 
-    // Map to frontend format
     const mappedVideos = videos.map((v: any) => ({
       videoId: v.youtube_video_id,
       title: v.title,
@@ -251,12 +374,10 @@ export class ViralService {
 
   /**
    * Transcribe a viral video using YouTube captions or Whisper.
-   * Accepts either database UUID or YouTube video ID.
    */
   async transcribeVideo(videoId: string) {
     let video = await this.prisma.viralVideo.findUnique({ where: { id: videoId } });
     if (!video) {
-      // Fallback: try finding by YouTube video ID
       video = await this.prisma.viralVideo.findFirst({
         where: { youtube_video_id: videoId },
         orderBy: { created_at: 'desc' },
@@ -272,11 +393,9 @@ export class ViralService {
     });
 
     try {
-      // Try YouTube captions first
       let transcription = await this.getYouTubeCaptions(video.youtube_video_id);
 
       if (!transcription) {
-        // Fallback: use a description/title based approach
         transcription = `[Título]: ${video.title}\n[Canal]: ${video.channel_name}\n[Categoría]: ${video.category}\n\nNota: No se pudieron obtener subtítulos automáticos. Usar Whisper API con audio descargado para transcripción completa.`;
       }
 
@@ -296,13 +415,18 @@ export class ViralService {
   }
 
   /**
-   * Process transcription into original course content using Claude.
+   * Process transcription into original content using Claude.
+   * Now supports tone, target audience, and content goal (course vs viral video).
    */
   async processContent(userId: string, options: {
     viralVideoId: string;
     transcription: string;
     contentLength: ContentLength;
     language?: string;
+    tone?: string;
+    targetAudience?: string;
+    contentGoal?: string;
+    autoPublishYoutube?: boolean;
   }) {
     if (!this.openaiApiKey && !this.anthropicApiKey) {
       throw new BadRequestException('Se requiere OPENAI_API_KEY o ANTHROPIC_API_KEY para procesamiento');
@@ -317,6 +441,11 @@ export class ViralService {
     }
     if (!video) throw new NotFoundException('Video viral no encontrado');
 
+    const tone = options.tone || 'educativo';
+    const targetAudience = options.targetAudience || 'público general';
+    const contentGoal = options.contentGoal || 'COURSE';
+    const autoPublish = options.autoPublishYoutube || false;
+
     // Create processing record
     const processing = await this.prisma.viralContentProcessing.create({
       data: {
@@ -324,6 +453,10 @@ export class ViralService {
         user_id: userId,
         raw_transcription: options.transcription,
         content_length: options.contentLength,
+        tone,
+        target_audience: targetAudience,
+        content_goal: contentGoal,
+        auto_publish_youtube: autoPublish,
         status: 'PROCESSING',
       },
     });
@@ -337,9 +470,44 @@ export class ViralService {
     };
     const duration = durationMap[options.contentLength] || durationMap.MEDIUM;
 
-    const systemPrompt = `Eres un experto en diseño instruccional y creación de contenido educativo original.
-Se te proporcionará información factual extraída de una fuente de video.
-Tu tarea es crear contenido COMPLETAMENTE ORIGINAL para un curso educativo.
+    // Build prompt based on content goal
+    const isViralGoal = contentGoal === 'VIRAL_VIDEO';
+
+    const goalInstructions = isViralGoal
+      ? `OBJETIVO: Crear un GUIÓN para un video de YouTube diseñado para volverse VIRAL.
+El contenido debe:
+- Tener un gancho poderoso en los primeros 5 segundos
+- Mantener la atención con transiciones dinámicas
+- Incluir calls-to-action (suscribirse, like, comentar)
+- Usar storytelling y datos impactantes
+- Estar optimizado para retención de audiencia
+- Incluir SEO: título viral, descripción optimizada, tags estratégicos
+- Sugerir timestamps para capítulos de YouTube
+
+FORMATO DE SALIDA (JSON estricto):
+{
+  "title": "Título viral y clickbait ético (max 60 chars)",
+  "description": "Descripción SEO optimizada para YouTube (500+ palabras con keywords)",
+  "target_audience": "${targetAudience}",
+  "seo_tags": ["tag1", "tag2", "tag3", ...hasta 30 tags],
+  "seo_title": "Título SEO alternativo",
+  "seo_description": "Meta description corta (160 chars)",
+  "youtube_category": "ID categoría YouTube",
+  "hooks": ["Gancho 1 para intro", "Gancho alternativo"],
+  "timestamps": ["0:00 Intro", "0:15 Tema 1", ...],
+  "modules": [
+    {
+      "title": "Sección del video",
+      "content": "Guión completo de narración para esta sección",
+      "key_points": ["Punto clave 1"],
+      "visual_suggestions": ["Sugerencia visual para esta sección"]
+    }
+  ],
+  "call_to_action": "CTA final del video",
+  "thumbnail_ideas": ["Idea 1 para thumbnail viral"],
+  "disclaimer": "Contenido original..."
+}`
+      : `OBJETIVO: Crear contenido COMPLETAMENTE ORIGINAL para un curso educativo.
 
 REGLAS ESTRICTAS:
 1. NUNCA copies frases, párrafos o estructura del contenido fuente
@@ -350,18 +518,11 @@ REGLAS ESTRICTAS:
 6. Incluye preguntas de reflexión y ejercicios prácticos
 7. El resultado debe ser autosuficiente
 
-EXTENSIÓN: ${options.contentLength}
-- Duración narración: ${duration.min}-${duration.max} minutos (~${duration.words_min}-${duration.words_max} palabras)
-- Módulos: ${duration.modules_min}-${duration.modules_max}
-
-CATEGORÍA: ${video.category}
-IDIOMA: ${options.language || 'español'}
-
 FORMATO DE SALIDA (JSON estricto):
 {
   "title": "Título atractivo y SEO del curso",
   "description": "Descripción de 2-3 párrafos",
-  "target_audience": "Público objetivo",
+  "target_audience": "${targetAudience}",
   "objectives": ["Objetivo 1", "Objetivo 2"],
   "modules": [
     {
@@ -376,13 +537,26 @@ FORMATO DE SALIDA (JSON estricto):
   "disclaimer": "Este contenido es una creación original con fines educativos..."
 }`;
 
+    const systemPrompt = `Eres un experto en diseño instruccional y creación de contenido ${isViralGoal ? 'viral para YouTube' : 'educativo original'}.
+Se te proporcionará información factual extraída de una fuente de video.
+
+TONO: ${tone}
+PÚBLICO OBJETIVO: ${targetAudience}
+EXTENSIÓN: ${options.contentLength}
+- Duración narración: ${duration.min}-${duration.max} minutos (~${duration.words_min}-${duration.words_max} palabras)
+- ${isViralGoal ? 'Secciones' : 'Módulos'}: ${duration.modules_min}-${duration.modules_max}
+
+CATEGORÍA: ${video.category}
+IDIOMA: ${options.language || 'español'}
+
+${goalInstructions}`;
+
     try {
-      const userMessage = `Información factual extraída del video "${video.title}" (${video.category}):\n\n${options.transcription.substring(0, 10000)}\n\nGenera el contenido original del curso en formato JSON.`;
+      const userMessage = `Información factual extraída del video "${video.title}" (${video.category}):\n\n${options.transcription.substring(0, 10000)}\n\nGenera el contenido original en formato JSON.`;
 
       let content = '';
 
       if (this.openaiApiKey) {
-        // Use OpenAI
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -407,7 +581,6 @@ FORMATO DE SALIDA (JSON estricto):
         const data = await response.json();
         content = data.choices?.[0]?.message?.content || '';
       } else {
-        // Fallback to Anthropic
         const response = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -447,6 +620,9 @@ FORMATO DE SALIDA (JSON estricto):
       const topics = generatedDoc?.modules?.map((m: any) => m.title) || [];
       const keyFacts = generatedDoc?.modules?.flatMap((m: any) => m.key_points || []) || [];
 
+      // Generate TXT and PDF files for knowledge base
+      const filePaths = await this.generateDocumentFiles(processing.id, generatedDoc, video.title || 'contenido');
+
       // Update processing record
       await this.prisma.viralContentProcessing.update({
         where: { id: processing.id },
@@ -455,10 +631,14 @@ FORMATO DE SALIDA (JSON estricto):
           topics_extracted: topics,
           key_facts: keyFacts,
           generated_document: generatedDoc,
+          generated_file_path: filePaths.txtPath,
           target_duration_minutes: duration.max,
           status: 'READY',
         },
       });
+
+      // Auto-ingest into knowledge base
+      await this.ingestToKnowledgeBase(processing.id, generatedDoc, video, filePaths.txtPath);
 
       // Schedule raw transcription deletion (privacy)
       setTimeout(async () => {
@@ -468,7 +648,7 @@ FORMATO DE SALIDA (JSON estricto):
             data: { raw_transcription: null },
           });
         } catch {}
-      }, 24 * 60 * 60 * 1000); // 24 hours
+      }, 24 * 60 * 60 * 1000);
 
       return {
         id: processing.id,
@@ -477,6 +657,11 @@ FORMATO DE SALIDA (JSON estricto):
         keyFacts,
         contentLength: options.contentLength,
         targetDuration: `${duration.min}-${duration.max} min`,
+        contentGoal,
+        autoPublishYoutube: autoPublish,
+        generatedFilePath: filePaths.txtPath,
+        tone,
+        targetAudience,
       };
     } catch (error) {
       await this.prisma.viralContentProcessing.update({
@@ -484,6 +669,118 @@ FORMATO DE SALIDA (JSON estricto):
         data: { status: 'PENDING' },
       });
       throw error;
+    }
+  }
+
+  /**
+   * Generate TXT document file from processed content.
+   */
+  private async generateDocumentFiles(processingId: string, doc: any, videoTitle: string) {
+    const kbDir = join(process.cwd(), 'uploads', 'knowledge-base', 'viral');
+    mkdirSync(kbDir, { recursive: true });
+
+    // Generate TXT
+    let txtContent = '';
+    txtContent += `# ${doc?.title || videoTitle}\n\n`;
+    txtContent += `Fecha de generación: ${new Date().toISOString().split('T')[0]}\n`;
+    txtContent += `Fuente: Video viral - ${videoTitle}\n\n`;
+
+    if (doc?.description) {
+      txtContent += `## Descripción\n\n${doc.description}\n\n`;
+    }
+
+    if (doc?.target_audience) {
+      txtContent += `## Público objetivo\n\n${doc.target_audience}\n\n`;
+    }
+
+    if (doc?.objectives) {
+      txtContent += `## Objetivos\n\n`;
+      doc.objectives.forEach((obj: string, i: number) => {
+        txtContent += `${i + 1}. ${obj}\n`;
+      });
+      txtContent += '\n';
+    }
+
+    if (doc?.modules) {
+      txtContent += `## Contenido (${doc.modules.length} módulos)\n\n`;
+      doc.modules.forEach((mod: any, i: number) => {
+        txtContent += `### ${i + 1}. ${mod.title}\n\n`;
+        if (mod.content) txtContent += `${mod.content}\n\n`;
+        if (mod.key_points?.length) {
+          txtContent += `**Puntos clave:**\n`;
+          mod.key_points.forEach((p: string) => txtContent += `- ${p}\n`);
+          txtContent += '\n';
+        }
+        if (mod.reflection_questions?.length) {
+          txtContent += `**Preguntas de reflexión:**\n`;
+          mod.reflection_questions.forEach((q: string) => txtContent += `- ${q}\n`);
+          txtContent += '\n';
+        }
+        txtContent += '---\n\n';
+      });
+    }
+
+    if (doc?.seo_tags) {
+      txtContent += `## Tags SEO\n\n${doc.seo_tags.join(', ')}\n\n`;
+    }
+
+    if (doc?.disclaimer) {
+      txtContent += `## Disclaimer\n\n${doc.disclaimer}\n`;
+    }
+
+    const txtPath = join(kbDir, `${processingId}.txt`);
+    writeFileSync(txtPath, txtContent);
+
+    return {
+      txtPath: `/uploads/knowledge-base/viral/${processingId}.txt`,
+      txtContent,
+    };
+  }
+
+  /**
+   * Auto-ingest processed content into knowledge base.
+   */
+  private async ingestToKnowledgeBase(processingId: string, doc: any, video: any, filePath: string) {
+    try {
+      const content = JSON.stringify(doc, null, 2);
+      const chunks = this.chunkText(content, 512, 50);
+
+      const existing = await this.prisma.knowledgeBaseDocument.findFirst({
+        where: { viral_video_id: video.id, source_type: 'VIRAL_CONTENT' },
+      });
+
+      if (existing) {
+        await this.prisma.knowledgeBaseDocument.update({
+          where: { id: existing.id },
+          data: {
+            title: doc?.title || video.title || 'Contenido viral procesado',
+            category: video.category || null,
+            tags: (doc?.seo_tags || doc?.modules?.map((m: any) => m.title)) || [],
+            file_path: filePath,
+            file_size_bytes: Buffer.byteLength(content),
+            chunk_count: chunks.length,
+            ingested_at: new Date(),
+          },
+        });
+      } else {
+        await this.prisma.knowledgeBaseDocument.create({
+          data: {
+            title: doc?.title || video.title || 'Contenido viral procesado',
+            category: video.category || null,
+            tags: (doc?.seo_tags || doc?.modules?.map((m: any) => m.title)) || [],
+            file_path: filePath,
+            file_size_bytes: Buffer.byteLength(content),
+            chunk_count: chunks.length,
+            source_type: 'VIRAL_CONTENT',
+            viral_video_id: video.id,
+            ingested_at: new Date(),
+          },
+        });
+      }
+
+      this.logger.log(`[KB] Auto-ingested viral content: ${doc?.title || video.title}`);
+    } catch (err) {
+      this.logger.warn(`[KB] Failed to auto-ingest: ${err.message}`);
     }
   }
 
@@ -497,11 +794,14 @@ FORMATO DE SALIDA (JSON estricto):
     });
     if (!proc) throw new NotFoundException('Procesamiento no encontrado');
 
-    // Reprocess with new length
     return this.processContent(proc.user_id, {
       viralVideoId: proc.viral_video_id,
       transcription: proc.raw_transcription || proc.processed_content || '',
       contentLength,
+      tone: proc.tone || undefined,
+      targetAudience: proc.target_audience || undefined,
+      contentGoal: proc.content_goal || undefined,
+      autoPublishYoutube: proc.auto_publish_youtube,
     });
   }
 
@@ -522,7 +822,7 @@ FORMATO DE SALIDA (JSON estricto):
       viral_video: proc.viral_video
         ? { ...proc.viral_video, view_count: Number(proc.viral_video.view_count) }
         : null,
-      raw_transcription: undefined, // Don't expose raw transcription
+      raw_transcription: undefined,
     };
   }
 
@@ -530,26 +830,29 @@ FORMATO DE SALIDA (JSON estricto):
    * Get trending viral videos per category.
    */
   async getTrending() {
-    if (!this.youtubeApiKey) return { religious: [], educational: [], news: [] };
+    if (!this.youtubeApiKey) return {};
 
+    const allCategories = Object.keys(VIRAL_KEYWORDS) as ViralCategory[];
     const result: Record<string, any[]> = {};
 
-    for (const cat of ['RELIGIOUS', 'EDUCATIONAL', 'NEWS'] as ViralCategory[]) {
+    for (const cat of allCategories) {
       const videos = await this.prisma.viralVideo.findMany({
-        where: { category: cat },
+        where: { category: cat as ViralCategory },
         orderBy: { view_count: 'desc' },
         take: 10,
       });
-      result[cat.toLowerCase()] = videos.map((v) => ({
-        videoId: v.youtube_video_id,
-        title: v.title,
-        channelTitle: v.channel_name,
-        thumbnail: v.thumbnail_url,
-        viewCount: Number(v.view_count),
-        likeCount: v.like_count,
-        duration: this.formatDuration(v.duration_seconds),
-        publishedAt: v.published_at?.toISOString?.() || v.published_at,
-      }));
+      if (videos.length > 0) {
+        result[cat.toLowerCase()] = videos.map((v) => ({
+          videoId: v.youtube_video_id,
+          title: v.title,
+          channelTitle: v.channel_name,
+          thumbnail: v.thumbnail_url,
+          viewCount: Number(v.view_count),
+          likeCount: v.like_count,
+          duration: this.formatDuration(v.duration_seconds),
+          publishedAt: v.published_at?.toISOString?.() || v.published_at,
+        }));
+      }
     }
 
     return result;
@@ -576,11 +879,74 @@ FORMATO DE SALIDA (JSON estricto):
     }));
   }
 
+  /**
+   * Get available categories with labels.
+   */
+  getCategories() {
+    return Object.keys(VIRAL_KEYWORDS).map((key) => ({
+      key,
+      label: this.getCategoryLabel(key),
+      keywordsCount: VIRAL_KEYWORDS[key].length,
+    }));
+  }
+
+  /**
+   * Get available date ranges.
+   */
+  getDateRanges() {
+    return [
+      { value: '12h', label: 'Últimas 12 horas' },
+      { value: '24h', label: 'Últimas 24 horas' },
+      { value: '2d', label: 'Últimos 2 días' },
+      { value: '3d', label: 'Últimos 3 días' },
+      { value: '4d', label: 'Últimos 4 días' },
+      { value: '7d', label: 'Última semana' },
+      { value: '15d', label: 'Últimos 15 días' },
+      { value: '1m', label: 'Último mes' },
+      { value: '2m', label: 'Últimos 2 meses' },
+      { value: '3m', label: 'Últimos 3 meses' },
+      { value: '4m', label: 'Últimos 4 meses' },
+      { value: '5m', label: 'Últimos 5 meses' },
+      { value: '6m', label: 'Últimos 6 meses' },
+      { value: '7m', label: 'Últimos 7 meses' },
+      { value: '8m', label: 'Últimos 8 meses' },
+      { value: '9m', label: 'Últimos 9 meses' },
+      { value: '10m', label: 'Últimos 10 meses' },
+      { value: '11m', label: 'Últimos 11 meses' },
+      { value: '12m', label: 'Último año' },
+    ];
+  }
+
   // ─── Private helpers ──────────────────────────────────────────────
+
+  private getCategoryLabel(key: string): string {
+    const labels: Record<string, string> = {
+      RELIGIOUS: 'Religiosos',
+      EDUCATIONAL: 'Educativos',
+      NEWS: 'Noticias',
+      TECHNOLOGY: 'Tecnología',
+      HEALTH: 'Salud y Bienestar',
+      BUSINESS: 'Negocios',
+      ENTERTAINMENT: 'Entretenimiento',
+      SCIENCE: 'Ciencia',
+      SPORTS: 'Deportes',
+      COOKING: 'Cocina',
+      MUSIC: 'Música',
+      TRAVEL: 'Viajes',
+      FINANCE: 'Finanzas',
+      MOTIVATION: 'Motivación',
+      COMEDY: 'Comedia',
+      GAMING: 'Gaming',
+      FASHION: 'Moda y Belleza',
+      DIY: 'Hazlo tú mismo',
+      POLITICS: 'Política',
+      ENVIRONMENT: 'Medio Ambiente',
+    };
+    return labels[key] || key;
+  }
 
   private async getYouTubeCaptions(videoId: string): Promise<string | null> {
     try {
-      // Try to get captions list
       const captionsResponse = await fetch(
         `https://www.googleapis.com/youtube/v3/captions?videoId=${videoId}&part=snippet&key=${this.youtubeApiKey}`,
       );
@@ -599,8 +965,6 @@ FORMATO DE SALIDA (JSON estricto):
       const captionId = spanishCaption?.id || autoCaption?.id || anyCaption?.id;
       if (!captionId) return null;
 
-      // Note: Downloading captions requires OAuth, so we return metadata
-      // In production, use youtube-transcript library or Whisper API
       return `[Subtítulos disponibles para video ${videoId}. Caption ID: ${captionId}. Idioma: ${spanishCaption?.snippet.language || autoCaption?.snippet.language || 'auto'}]`;
     } catch {
       return null;
@@ -622,5 +986,17 @@ FORMATO DE SALIDA (JSON estricto):
     const minutes = parseInt(match[2] || '0');
     const seconds = parseInt(match[3] || '0');
     return hours * 3600 + minutes * 60 + seconds;
+  }
+
+  private chunkText(text: string, chunkSize: number = 512, overlap: number = 50): string[] {
+    const words = text.split(/\s+/);
+    const chunks: string[] = [];
+    for (let i = 0; i < words.length; i += chunkSize - overlap) {
+      const chunk = words.slice(i, i + chunkSize).join(' ');
+      if (chunk.trim().length > 20) {
+        chunks.push(chunk);
+      }
+    }
+    return chunks;
   }
 }

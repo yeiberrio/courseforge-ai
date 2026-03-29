@@ -50,6 +50,20 @@ export class ViralController {
     }
   }
 
+  @Get('categories')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Obtener categorías disponibles para búsqueda viral' })
+  async getCategories() {
+    return this.viralService.getCategories();
+  }
+
+  @Get('date-ranges')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Obtener rangos de fecha disponibles' })
+  async getDateRanges() {
+    return this.viralService.getDateRanges();
+  }
+
   @Get('videos/:youtubeVideoId')
   @Roles(UserRole.CREATOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Obtener video viral por YouTube video ID' })
@@ -80,7 +94,7 @@ export class ViralController {
 
   @Post('process')
   @Roles(UserRole.CREATOR, UserRole.ADMIN)
-  @ApiOperation({ summary: 'Procesar transcripción y generar contenido original con IA' })
+  @ApiOperation({ summary: 'Procesar transcripción con opciones avanzadas (tono, audiencia, objetivo)' })
   async processContent(
     @CurrentUser('id') userId: string,
     @Body() body: {
@@ -88,6 +102,10 @@ export class ViralController {
       transcription: string;
       contentLength: ContentLength;
       language?: string;
+      tone?: string;
+      targetAudience?: string;
+      contentGoal?: string;
+      autoPublishYoutube?: boolean;
     },
   ) {
     try {

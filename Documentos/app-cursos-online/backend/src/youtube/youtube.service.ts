@@ -237,6 +237,86 @@ export class YouTubeService {
   }
 
   /**
+   * Auto-publish a course/video to YouTube after approval.
+   * Called automatically when a course status changes to APPROVED.
+   * Uses SEO metadata from the generated content.
+   */
+  async autoPublishOnApproval(options: {
+    userId: string;
+    courseId: string;
+    seoTitle?: string;
+    seoDescription?: string;
+    seoTags?: string[];
+    privacy?: 'PUBLIC' | 'UNLISTED' | 'PRIVATE';
+    categoryId?: string;
+  }) {
+    const { userId, courseId, seoTitle, seoDescription, seoTags, privacy = 'PUBLIC', categoryId = '27' } = options;
+
+    // Find user's active YouTube channel
+    const channel = await this.prisma.youTubeChannel.findFirst({
+      where: { user_id: userId, is_active: true },
+    });
+
+    if (!channel) {
+      this.logger.warn(`[AutoPublish] No YouTube channel found for user ${userId}`);
+      return { published: false, reason: 'No hay canal de YouTube conectado' };
+    }
+
+    // Get course with modules
+    const course = await this.prisma.course.findUnique({
+      where: { id: courseId },
+      include: {
+        modules: { where: { status: 'DONE' }, orderBy: { order: 'asc' } },
+      },
+    });
+
+    if (!course) {
+      throw new NotFoundException('Curso no encontrado');
+    }
+
+    const results: any[] = [];
+
+    // Publish each module that has a video
+    for (const mod of course.modules) {
+      if (!mod.video_url) continue;
+
+      const title = seoTitle
+        ? `${seoTitle} - ${mod.title}`
+        : `${course.title} - ${mod.title}`;
+
+      const description = seoDescription
+        ? `${seoDescription}\n\n📚 Módulo ${mod.order}: ${mod.title}\n\n🔔 Suscríbete para más contenido educativo.\n\n#${(seoTags || []).slice(0, 10).join(' #')}`
+        : `${course.description_short || course.title}\n\nMódulo ${mod.order}: ${mod.title}`;
+
+      try {
+        const result = await this.publishVideo({
+          userId,
+          courseId,
+          moduleId: mod.id,
+          channelDbId: channel.id,
+          title: title.substring(0, 100),
+          description: description.substring(0, 5000),
+          tags: (seoTags || []).slice(0, 30),
+          privacy,
+          categoryId,
+        });
+        results.push({ moduleId: mod.id, title: mod.title, ...result });
+      } catch (err) {
+        this.logger.error(`[AutoPublish] Failed to publish module ${mod.id}: ${err.message}`);
+        results.push({ moduleId: mod.id, title: mod.title, error: err.message });
+      }
+    }
+
+    this.logger.log(`[AutoPublish] Published ${results.filter(r => !r.error).length}/${course.modules.length} modules for course ${courseId}`);
+
+    return {
+      published: true,
+      courseId,
+      results,
+    };
+  }
+
+  /**
    * Generate SRT subtitles from a module's script.
    */
   async generateSubtitles(moduleId: string): Promise<string> {

@@ -119,6 +119,23 @@ enum ViralCategory {
   RELIGIOUS
   EDUCATIONAL
   NEWS
+  TECHNOLOGY
+  HEALTH
+  BUSINESS
+  ENTERTAINMENT
+  SCIENCE
+  SPORTS
+  COOKING
+  MUSIC
+  TRAVEL
+  FINANCE
+  MOTIVATION
+  COMEDY
+  GAMING
+  FASHION
+  DIY
+  POLITICS
+  ENVIRONMENT
 }
 
 enum ViralTranscriptionStatus {
@@ -640,11 +657,16 @@ model ViralContentProcessing {
   processed_content     String?
   content_length        ContentLength         @default(MEDIUM)
   target_duration_minutes Int?
+  tone                  String?
+  target_audience       String?
+  content_goal          String?               @default("COURSE")
   topics_extracted      Json?
   key_facts             Json?
   generated_document    Json?
+  generated_file_path   String?
   status                ViralProcessingStatus @default(PENDING)
   course_id             String?
+  auto_publish_youtube  Boolean               @default(false)
   created_at            DateTime              @default(now())
   updated_at            DateTime              @updatedAt
 

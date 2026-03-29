@@ -78,6 +78,22 @@ export class CoursesController {
     return this.coursesService.update(id, userId, userRole, dto);
   }
 
+  @Post(':id/approve')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Aprobar curso y publicar automáticamente en YouTube + KB' })
+  approve(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') userRole: string,
+    @Body() body?: {
+      publishToYoutube?: boolean;
+      youtubePrivacy?: 'PUBLIC' | 'UNLISTED' | 'PRIVATE';
+    },
+  ) {
+    return this.coursesService.approveCourse(id, userId, userRole, body);
+  }
+
   @Delete(':id')
   @Roles(UserRole.CREATOR, UserRole.ADMIN)
   @ApiBearerAuth()
