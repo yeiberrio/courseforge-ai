@@ -115,6 +115,7 @@ export class AgentsService {
     personality?: string;
     tone?: string;
     welcomeMessage?: string;
+    offTopicMessage?: string;
   }) {
     const agent = await this.getOrCreateSalesAgent();
 
@@ -122,9 +123,12 @@ export class AgentsService {
     if (data.name) updateData.name = data.name;
     if (data.personality) updateData.personality = data.personality;
     if (data.tone) updateData.tone = data.tone;
-    if (data.welcomeMessage !== undefined) {
-      updateData.escalation_rules = { ...(agent.escalation_rules as any || {}), welcomeMessage: data.welcomeMessage };
-    }
+
+    const currentRules = (agent.escalation_rules as any) || {};
+    let rulesChanged = false;
+    if (data.welcomeMessage !== undefined) { currentRules.welcomeMessage = data.welcomeMessage; rulesChanged = true; }
+    if (data.offTopicMessage !== undefined) { currentRules.offTopicMessage = data.offTopicMessage; rulesChanged = true; }
+    if (rulesChanged) updateData.escalation_rules = currentRules;
 
     return this.prisma.agentConfig.update({
       where: { id: agent.id },
@@ -237,8 +241,18 @@ export class AgentsService {
     // Search relevant context from agent's KB
     const context = await this.searchAgentKB(agentId, message);
 
-    // Build Claude messages
-    const systemPrompt = agent.personality || DEFAULT_SALES_PROMPT;
+    // Build system prompt from agent config + dynamic overrides
+    let systemPrompt = agent.personality || DEFAULT_SALES_PROMPT;
+
+    // Inject dynamic off-topic response if configured
+    const offTopicMsg = (agent.escalation_rules as any)?.offTopicMessage;
+    if (offTopicMsg) {
+      systemPrompt = systemPrompt.replace(
+        /Respuesta ante preguntas fuera de tema:.*$/m,
+        `Respuesta ante preguntas fuera de tema: "${offTopicMsg}"`,
+      );
+    }
+
     const contextBlock = context.length > 0
       ? `\n\nCONTEXTO DE LA BASE DE CONOCIMIENTO:\n${context.map((c) => c.content_text).join('\n\n---\n\n')}`
       : '';

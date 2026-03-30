@@ -27,7 +27,7 @@ interface AgentConfig {
   name: string;
   personality: string;
   tone: string;
-  escalation_rules: { welcomeMessage?: string } | null;
+  escalation_rules: { welcomeMessage?: string; offTopicMessage?: string } | null;
 }
 
 interface AgentStats {
@@ -57,6 +57,7 @@ export default function AgenteVentasPage() {
   const [editPersonality, setEditPersonality] = useState("");
   const [editTone, setEditTone] = useState("FRIENDLY");
   const [editWelcome, setEditWelcome] = useState("");
+  const [editOffTopic, setEditOffTopic] = useState("");
   const [savingConfig, setSavingConfig] = useState(false);
 
   // New doc form
@@ -80,6 +81,7 @@ export default function AgenteVentasPage() {
       setEditPersonality(a.personality || "");
       setEditTone(a.tone);
       setEditWelcome(a.escalation_rules?.welcomeMessage || "");
+      setEditOffTopic(a.escalation_rules?.offTopicMessage || "");
     } catch {}
     setLoading(false);
   };
@@ -95,6 +97,7 @@ export default function AgenteVentasPage() {
         personality: editPersonality,
         tone: editTone,
         welcomeMessage: editWelcome,
+        offTopicMessage: editOffTopic,
       }, token);
       fetchData();
     } catch {}
@@ -259,6 +262,22 @@ export default function AgenteVentasPage() {
                 rows={3}
                 className="w-full rounded-lg border px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
               />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Respuesta cuando preguntan fuera de tema
+              </label>
+              <textarea
+                value={editOffTopic}
+                onChange={(e) => setEditOffTopic(e.target.value)}
+                placeholder="Ej: Entiendo tu consulta, pero mi especialidad es ayudarte con soluciones tecnologicas. ¿Te gustaria conocer nuestros servicios o agendar una reunion?"
+                rows={3}
+                className="w-full rounded-lg border px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Este mensaje se muestra cuando el cliente pregunta algo que no esta relacionado con tus servicios. Hazlo persuasivo para redirigir a la venta.
+              </p>
             </div>
 
             <div>
