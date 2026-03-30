@@ -28,6 +28,22 @@ export class AgentsController {
     return this.agentsService.getOrCreateSalesAgent();
   }
 
+  @Post('sales/update')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Actualizar configuracion del agente de ventas' })
+  async updateSalesAgent(
+    @Body() body: { name?: string; personality?: string; tone?: string; welcomeMessage?: string },
+  ) {
+    return this.agentsService.updateSalesAgent(body);
+  }
+
+  @Post('sales/reset')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Resetear agente a configuracion por defecto' })
+  async resetSalesAgent() {
+    return this.agentsService.resetSalesAgent();
+  }
+
   @Get('sales/stats')
   @Roles(UserRole.CREATOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Estadisticas del agente de ventas' })

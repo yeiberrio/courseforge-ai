@@ -35,15 +35,21 @@ export class TelegramService implements OnModuleInit {
       // Handle /start command
       this.bot.start(async (ctx) => {
         const firstName = ctx.from.first_name || 'cliente';
-        await ctx.reply(
-          `Hola ${firstName}! 👋\n\n` +
-          `Soy el asistente de ventas. Puedo ayudarte con:\n\n` +
-          `• Automatizacion de procesos\n` +
-          `• Documentacion de procesos\n` +
-          `• Entrenamiento en herramientas de IA\n` +
-          `• Desarrollo web y movil\n\n` +
-          `Escribe tu consulta y te ayudo! 🚀`,
-        );
+
+        // Get dynamic welcome message from agent config
+        const currentAgent = await this.agentsService.getOrCreateSalesAgent();
+        const customWelcome = (currentAgent.escalation_rules as any)?.welcomeMessage;
+
+        const welcomeMsg = customWelcome
+          ? customWelcome.replace('{nombre}', firstName)
+          : `Hola ${firstName}! 👋\n\nSoy el asistente de ventas. Puedo ayudarte con:\n\n` +
+            `• Automatizacion de procesos\n` +
+            `• Documentacion de procesos\n` +
+            `• Entrenamiento en herramientas de IA\n` +
+            `• Desarrollo web y movil\n\n` +
+            `Escribe tu consulta y te ayudo! 🚀`;
+
+        await ctx.reply(welcomeMsg);
 
         // Auto-create lead from Telegram user
         await this.ensureLead(ctx.from);
