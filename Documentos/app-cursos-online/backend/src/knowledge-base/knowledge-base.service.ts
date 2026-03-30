@@ -240,7 +240,13 @@ export class KnowledgeBaseService {
     const filePath = join(process.cwd(), doc.file_path);
     if (existsSync(filePath)) {
       const { readFileSync } = await import('fs');
-      return { content: readFileSync(filePath, 'utf-8'), fileName };
+      const rawContent = readFileSync(filePath, 'utf-8');
+      // If content looks like JSON, convert to clean text
+      const trimmed = rawContent.trim();
+      if (trimmed.startsWith('{') || trimmed.startsWith('```json')) {
+        return { content: this.jsonToCleanText(doc.title, rawContent), fileName };
+      }
+      return { content: rawContent, fileName };
     }
 
     // Fallback: reconstruct from RAG chunks
@@ -268,7 +274,7 @@ export class KnowledgeBaseService {
         orderBy: { created_at: 'desc' },
       });
       if (processing?.processed_content) {
-        return { content: processing.processed_content, fileName };
+        return { content: this.jsonToCleanText(doc.title, processing.processed_content), fileName };
       }
     }
 
@@ -410,6 +416,48 @@ export class KnowledgeBaseService {
     }
 
     return doc;
+  }
+
+  /**
+   * Convert JSON processed_content to clean readable text.
+   */
+  private jsonToCleanText(title: string, raw: string): string {
+    try {
+      // Try to strip markdown code fences
+      const cleaned = raw.replace(/^```json\s*/i, '').replace(/\s*```\s*$/, '');
+      const data = JSON.parse(cleaned);
+
+      const lines: string[] = [];
+      lines.push(title);
+      lines.push('='.repeat(title.length));
+      lines.push('');
+
+      if (data.description) lines.push(data.description, '');
+      if (data.target_audience) lines.push(`Público objetivo: ${data.target_audience}`, '');
+
+      if (data.modules && Array.isArray(data.modules)) {
+        for (const mod of data.modules) {
+          lines.push(`\n## ${mod.title || 'Sección'}\n`);
+          if (mod.content) lines.push(mod.content, '');
+          if (mod.key_points && Array.isArray(mod.key_points)) {
+            lines.push('Puntos clave:');
+            for (const p of mod.key_points) lines.push(`  - ${p}`);
+            lines.push('');
+          }
+        }
+      }
+
+      if (data.seo_tags && Array.isArray(data.seo_tags)) {
+        lines.push(`\nTags: ${data.seo_tags.join(', ')}`);
+      }
+
+      if (data.disclaimer) lines.push(`\n---\n${data.disclaimer}`);
+
+      return lines.join('\n');
+    } catch {
+      // If not valid JSON, return as-is stripping code fences
+      return raw.replace(/^```json\s*/i, '').replace(/\s*```\s*$/, '');
+    }
   }
 
   private chunkText(text: string, chunkSize: number = 512, overlap: number = 50): string[] {
