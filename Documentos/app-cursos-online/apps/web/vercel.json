@@ -1,4 +1,4 @@
 {
   "outputDirectory": "out",
-  "buildCommand": "cd ../.. && npx turbo build --filter=@courseforge/web"
+  "buildCommand": "npm run build"
 }
