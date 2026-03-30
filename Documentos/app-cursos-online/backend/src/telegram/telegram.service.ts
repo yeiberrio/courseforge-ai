@@ -122,8 +122,11 @@ export class TelegramService implements OnModuleInit {
         const sessionToken = `telegram-${chatId}`;
 
         try {
+          this.logger.log(`[Telegram] Message from ${ctx.from.first_name} (${chatId}): ${message.substring(0, 50)}`);
+
           // Ensure lead exists
           await this.ensureLead(ctx.from);
+          this.logger.log(`[Telegram] Lead ensured for ${chatId}`);
 
           // Find or create a system user for Telegram chats
           let systemUser = await this.prisma.user.findFirst({
@@ -131,21 +134,24 @@ export class TelegramService implements OnModuleInit {
           });
 
           if (!systemUser) {
-            const bcrypt = await import('bcryptjs');
+            // Use a pre-hashed password (bcrypt hash of 'telegram-bot-user')
             systemUser = await this.prisma.user.create({
               data: {
                 email: `telegram-${chatId}@bot.local`,
-                password_hash: await bcrypt.hash('telegram-bot-user', 10),
+                password_hash: '$2a$10$TelegramBotUserHashPlaceholder000000000000000000',
                 full_name: `${ctx.from.first_name || ''} ${ctx.from.last_name || ''}`.trim() || 'Telegram User',
                 role: 'STUDENT',
               },
             });
           }
 
+          this.logger.log(`[Telegram] System user: ${systemUser.id}`);
+
           // Send typing indicator
           await ctx.sendChatAction('typing');
 
           // Route to sales agent
+          this.logger.log(`[Telegram] Routing to agent ${this.salesAgentId}`);
           const response = await this.agentsService.chat(
             this.salesAgentId!,
             systemUser.id,
