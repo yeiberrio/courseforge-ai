@@ -6,8 +6,11 @@ import {
   Body,
   Param,
   Query,
+  Res,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { KnowledgeBaseService } from './knowledge-base.service';
 import { Roles } from '../common/decorators';
@@ -64,6 +67,16 @@ export class KnowledgeBaseController {
   @ApiOperation({ summary: 'Búsqueda semántica en la base de conocimiento' })
   async search(@Body() body: { query: string; limit?: number }) {
     return this.kbService.search(body.query, body.limit || 5);
+  }
+
+  @Get(':id/download')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Descargar archivo de la base de conocimiento' })
+  async downloadDocument(@Param('id') id: string, @Res() res: Response) {
+    const { filePath, fileName } = await this.kbService.getDownloadInfo(id);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.sendFile(filePath);
   }
 
   @Delete(':id')

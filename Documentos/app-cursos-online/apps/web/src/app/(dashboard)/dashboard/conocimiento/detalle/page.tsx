@@ -13,6 +13,7 @@ import {
   Layers,
   Trash2,
   Loader2,
+  Download,
 } from "lucide-react";
 
 interface KBDocument {
@@ -51,6 +52,26 @@ export default function ConocimientoDetallePage() {
     if (!token || !id || !confirm("¿Desactivar este documento?")) return;
     await api.delete(`/knowledge-base/${id}`, token);
     router.push("/dashboard/conocimiento");
+  };
+
+  const handleDownload = async () => {
+    if (!token || !id) return;
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1";
+      const res = await fetch(`${API_URL}/knowledge-base/${id}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Error al descargar");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(doc?.title || "documento").replace(/[^a-zA-Z0-9\s\-_]/g, "").trim().replace(/\s+/g, "_")}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("No se pudo descargar el archivo");
+    }
   };
 
   if (loading) {
@@ -94,12 +115,20 @@ export default function ConocimientoDetallePage() {
             Detalle del documento en la base de conocimiento RAG
           </p>
         </div>
-        <button
-          onClick={handleDeactivate}
-          className="flex items-center gap-1 rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-        >
-          <Trash2 className="h-4 w-4" /> Desactivar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDownload}
+            className="flex items-center gap-1 rounded-lg border border-brand-200 px-3 py-2 text-sm text-brand-600 hover:bg-brand-50"
+          >
+            <Download className="h-4 w-4" /> Descargar
+          </button>
+          <button
+            onClick={handleDeactivate}
+            className="flex items-center gap-1 rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+          >
+            <Trash2 className="h-4 w-4" /> Desactivar
+          </button>
+        </div>
       </div>
 
       <div className="space-y-4">

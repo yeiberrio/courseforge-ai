@@ -16,6 +16,7 @@ import {
   TrendingUp,
   X,
   Loader2,
+  Download,
 } from "lucide-react";
 
 /* ---------- types ---------- */
@@ -84,6 +85,29 @@ export default function ConocimientoPage() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
+
+  // download
+  const handleDownload = async (e: React.MouseEvent, docId: string, title: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!token) return;
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1";
+      const res = await fetch(`${API_URL}/knowledge-base/${docId}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Error al descargar");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${title.replace(/[^a-zA-Z0-9\s\-_]/g, "").trim().replace(/\s+/g, "_")}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("No se pudo descargar el archivo");
+    }
+  };
 
   // fetch stats
   useEffect(() => {
@@ -402,6 +426,13 @@ export default function ConocimientoPage() {
                       </div>
                     )}
                   </div>
+                  <button
+                    onClick={(e) => handleDownload(e, doc.id, doc.title)}
+                    className="shrink-0 rounded-lg border border-gray-200 p-2 text-gray-400 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-600"
+                    title="Descargar documento"
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
                 </div>
               </Link>
             );

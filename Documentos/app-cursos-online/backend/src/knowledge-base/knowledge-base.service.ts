@@ -226,6 +226,24 @@ export class KnowledgeBaseService {
   }
 
   /**
+   * Get download info for a KB document.
+   */
+  async getDownloadInfo(id: string): Promise<{ filePath: string; fileName: string }> {
+    const doc = await this.prisma.knowledgeBaseDocument.findUnique({ where: { id } });
+    if (!doc) throw new NotFoundException('Documento no encontrado');
+
+    const filePath = join(process.cwd(), doc.file_path);
+    if (!existsSync(filePath)) {
+      throw new NotFoundException('Archivo no encontrado en el servidor');
+    }
+
+    const safeTitle = doc.title.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s\-_]/g, '').trim().replace(/\s+/g, '_');
+    const fileName = `${safeTitle}.txt`;
+
+    return { filePath, fileName };
+  }
+
+  /**
    * Get knowledge base statistics.
    */
   async getStats() {
