@@ -153,11 +153,17 @@ export class TelegramService implements OnModuleInit {
             sessionToken,
           );
 
-          await ctx.reply(response.message.content, { parse_mode: 'Markdown' }).catch(() =>
-            ctx.reply(response.message.content),
-          );
+          // Clean markdown for Telegram (convert **bold** to *bold*)
+          const cleanMsg = response.message.content
+            .replace(/\*\*(.*?)\*\*/g, '*$1*')
+            .replace(/#{1,3}\s/g, '');
+
+          await ctx.reply(cleanMsg).catch((replyErr) => {
+            this.logger.warn(`Reply format error: ${replyErr.message}`);
+            ctx.reply(response.message.content.replace(/[*_`#]/g, ''));
+          });
         } catch (err) {
-          this.logger.error(`Telegram message error: ${err.message}`);
+          this.logger.error(`Telegram message error: ${err.message}`, err.stack);
           await ctx.reply('Disculpa, hubo un error procesando tu mensaje. Intenta de nuevo.');
         }
       });
