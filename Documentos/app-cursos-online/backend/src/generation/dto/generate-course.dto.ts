@@ -80,6 +80,15 @@ export class GenerateCourseDto {
   @IsUUID()
   categoryId: string;
 
+  @ApiPropertyOptional({
+    enum: ['course', 'viral_video'],
+    default: 'course',
+    description: 'Objetivo: curso (múltiples módulos) o video viral (un solo video para YouTube)',
+  })
+  @IsOptional()
+  @IsString()
+  contentGoal?: 'course' | 'viral_video';
+
   @ApiPropertyOptional({ default: 'es-CO-GonzaloNeural', description: 'Voz para el TTS (Edge TTS)' })
   @IsOptional()
   @IsString()

@@ -89,6 +89,9 @@ export default function GenerarCursoPage() {
   const [filePath, setFilePath] = useState("");
   const [structure, setStructure] = useState<CourseStructure | null>(null);
 
+  // Content goal
+  const [contentGoal, setContentGoal] = useState<"course" | "viral_video">("course");
+
   // Config
   const [categoryId, setCategoryId] = useState("");
   const [voice, setVoice] = useState("es-CO-GonzaloNeural");
@@ -200,6 +203,7 @@ export default function GenerarCursoPage() {
         {
           filePath,
           categoryId,
+          contentGoal,
           voice: videoType === "heygen" && heygenVoiceSource === "heygen" ? undefined : voice,
           slideStyle,
           targetDurationMin: targetDuration,
@@ -246,10 +250,12 @@ export default function GenerarCursoPage() {
       </button>
 
       <h1 className="mb-2 text-2xl font-bold text-gray-900">
-        Generar curso con IA
+        {contentGoal === "viral_video" ? "Generar video viral con IA" : "Generar curso con IA"}
       </h1>
       <p className="mb-8 text-sm text-gray-500">
-        Sube un documento y generaremos automáticamente los videos del curso
+        {contentGoal === "viral_video"
+          ? "Sube un documento y generaremos un video viral optimizado para YouTube"
+          : "Sube un documento y generaremos automaticamente los videos del curso"}
       </p>
 
       {/* Step indicator */}
@@ -357,6 +363,55 @@ export default function GenerarCursoPage() {
       {/* STEP 2: Configure */}
       {step === "configure" && structure && (
         <div className="space-y-6">
+          {/* Content Goal Selector */}
+          <div className="rounded-xl border bg-white p-6 shadow-sm">
+            <h3 className="mb-3 text-lg font-semibold text-gray-900">
+              Tipo de contenido
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => setContentGoal("course")}
+                className={`rounded-xl border-2 p-5 text-left transition ${
+                  contentGoal === "course"
+                    ? "border-brand-600 bg-brand-50 ring-2 ring-brand-200"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <FileText className="mb-2 h-8 w-8 text-brand-600" />
+                <p className="text-sm font-semibold text-gray-900">Curso completo</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Multiples modulos con videos independientes. Ideal para plataformas educativas.
+                </p>
+                {contentGoal === "course" && structure.modules.length > 0 && (
+                  <span className="mt-2 inline-block rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-medium text-brand-700">
+                    {structure.modules.length} modulos
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setContentGoal("viral_video")}
+                className={`rounded-xl border-2 p-5 text-left transition ${
+                  contentGoal === "viral_video"
+                    ? "border-red-500 bg-red-50 ring-2 ring-red-200"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <Play className="mb-2 h-8 w-8 text-red-500" />
+                <p className="text-sm font-semibold text-gray-900">Video viral</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Un solo video optimizado para YouTube con hook, desarrollo y CTA.
+                </p>
+                {contentGoal === "viral_video" && (
+                  <span className="mt-2 inline-block rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                    1 video completo
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+
           {/* Structure preview */}
           <div className="rounded-xl border bg-white p-6 shadow-sm">
             <h2 className="mb-1 text-lg font-semibold text-gray-900">
@@ -366,30 +421,36 @@ export default function GenerarCursoPage() {
               {structure.description}
             </p>
             <p className="mb-4 text-xs text-gray-400">
-              Público objetivo: {structure.targetAudience}
+              Publico objetivo: {structure.targetAudience}
             </p>
-            <h3 className="mb-2 text-sm font-medium text-gray-700">
-              Módulos detectados ({structure.modules.length}):
-            </h3>
-            <div className="space-y-2">
-              {structure.modules.map((mod, i) => (
-                <div
-                  key={i}
-                  className="rounded-lg border bg-gray-50 p-3"
-                >
-                  <p className="text-sm font-medium text-gray-900">
-                    {mod.title}
-                  </p>
-                  <ul className="mt-1 space-y-0.5">
-                    {mod.objectives.map((obj, j) => (
-                      <li key={j} className="text-xs text-gray-500">
-                        • {obj}
-                      </li>
-                    ))}
-                  </ul>
+            {contentGoal === "course" ? (
+              <>
+                <h3 className="mb-2 text-sm font-medium text-gray-700">
+                  Modulos detectados ({structure.modules.length}):
+                </h3>
+                <div className="space-y-2">
+                  {structure.modules.map((mod, i) => (
+                    <div key={i} className="rounded-lg border bg-gray-50 p-3">
+                      <p className="text-sm font-medium text-gray-900">{mod.title}</p>
+                      <ul className="mt-1 space-y-0.5">
+                        {mod.objectives.map((obj, j) => (
+                          <li key={j} className="text-xs text-gray-500">• {obj}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                <p className="text-sm font-medium text-gray-900">
+                  Se generara un unico video viral
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Todo el contenido del documento se condensara en un solo video con estructura de hook + desarrollo + CTA, optimizado para engagement en YouTube.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Config form */}
@@ -759,7 +820,7 @@ export default function GenerarCursoPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Duración por módulo: {targetDuration} min
+                  {contentGoal === "viral_video" ? "Duracion del video" : "Duracion por modulo"}: {targetDuration} min
                 </label>
                 <input
                   type="range"
@@ -783,7 +844,7 @@ export default function GenerarCursoPage() {
               disabled={!categoryId}
               className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-3 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
-              <Sparkles className="h-4 w-4" /> Generar curso completo
+              <Sparkles className="h-4 w-4" /> {contentGoal === "viral_video" ? "Generar video viral" : "Generar curso completo"}
             </button>
           </div>
         </div>
@@ -794,18 +855,19 @@ export default function GenerarCursoPage() {
         <div className="rounded-xl border bg-white p-8 shadow-sm text-center">
           <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-brand-600" />
           <h2 className="text-lg font-semibold text-gray-900">
-            Generando tu curso...
+            {contentGoal === "viral_video" ? "Generando tu video viral..." : "Generando tu curso..."}
           </h2>
           <p className="mt-1 text-sm text-gray-500">
-            {progress?.message || "Iniciando generación..."}
+            {progress?.message || "Iniciando generacion..."}
           </p>
 
           {progress && progress.totalModules > 0 && (
             <div className="mt-6">
               <div className="mb-2 flex justify-between text-sm">
                 <span className="text-gray-500">
-                  Módulo {progress.currentModule} de{" "}
-                  {progress.totalModules}
+                  {contentGoal === "viral_video"
+                    ? "Generando video..."
+                    : `Modulo ${progress.currentModule} de ${progress.totalModules}`}
                 </span>
                 <span className="font-medium text-brand-600">
                   {progressPct}%
@@ -832,15 +894,17 @@ export default function GenerarCursoPage() {
         <div className="rounded-xl border bg-white p-8 shadow-sm text-center">
           <CheckCircle2 className="mx-auto mb-4 h-14 w-14 text-green-500" />
           <h2 className="text-xl font-bold text-gray-900">
-            ¡Curso generado exitosamente!
+            {contentGoal === "viral_video" ? "Video viral generado exitosamente!" : "Curso generado exitosamente!"}
           </h2>
           <p className="mt-2 text-sm text-gray-500">
-            Se generaron {progress?.totalModules || 0} módulos con video,
-            audio y slides.
+            {contentGoal === "viral_video"
+              ? "Se genero 1 video viral con audio y slides, listo para subir a YouTube."
+              : `Se generaron ${progress?.totalModules || 0} modulos con video, audio y slides.`}
           </p>
           <p className="mt-1 text-sm text-gray-500">
-            El curso está en estado <strong>Revisión</strong> — revisa y
-            aprueba cada módulo.
+            {contentGoal === "viral_video"
+              ? "El video esta en estado Revision — revisalo antes de publicar."
+              : <>El curso esta en estado <strong>Revision</strong> — revisa y aprueba cada modulo.</>}
           </p>
 
           <div className="mt-6 flex justify-center gap-3">

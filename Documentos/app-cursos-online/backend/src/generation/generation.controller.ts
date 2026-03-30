@@ -95,6 +95,7 @@ export class GenerationController {
         dto.videoType,
         dto.avatarId,
         dto.heygenConfig,
+        dto.contentGoal,
       );
       this.logger.log(`[create-course] Course created: ${result.course.id} - "${result.course.title}"`);
       return result;

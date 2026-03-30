@@ -71,14 +71,21 @@ export class GenerationService {
     videoType: VideoType = 'slides',
     avatarId?: string,
     heygenConfig?: HeyGenConfigDto,
+    contentGoal: 'course' | 'viral_video' = 'course',
   ) {
     // 1. Analyze document
     const fullPath = join(process.cwd(), filePath);
-    this.logger.log(`[createCourse] Extracting text from: ${fullPath}`);
+    this.logger.log(`[createCourse] Extracting text from: ${fullPath} (goal: ${contentGoal})`);
     const text = await this.documentParser.extractText(fullPath);
     this.logger.log(`[createCourse] Extracted ${text.length} chars. Analyzing structure...`);
     const structure = await this.scriptGenerator.analyzeCourseDocument(text);
     this.logger.log(`[createCourse] Structure: "${structure.title}" with ${structure.modules.length} modules`);
+
+    // For viral_video: override to single module
+    if (contentGoal === 'viral_video') {
+      structure.modules = [{ title: structure.title, objectives: ['Video viral completo'] }];
+      structure.description = `Video viral: ${structure.description}`;
+    }
 
     // 2. Create course in DB
     const slug = structure.title
@@ -101,7 +108,7 @@ export class GenerationService {
       },
     });
 
-    // 3. Create modules
+    // 3. Create modules (1 for viral, multiple for course)
     for (let i = 0; i < structure.modules.length; i++) {
       await this.prisma.courseModule.create({
         data: {
@@ -114,7 +121,7 @@ export class GenerationService {
     }
 
     // 4. Start generation in background
-    this.generateCourseContent(course.id, text, structure, voice, slideStyle, targetDurationMin, videoType, avatarId, heygenConfig)
+    this.generateCourseContent(course.id, text, structure, voice, slideStyle, targetDurationMin, videoType, avatarId, heygenConfig, contentGoal)
       .catch((error) => {
         this.logger.error(`Generation failed for course ${course.id}: ${error.message}`);
         this.updateProgress(course.id, 'failed', 0, 0, error.message);
@@ -123,7 +130,10 @@ export class GenerationService {
     return {
       course,
       structure,
-      message: 'Curso creado. Generación de contenido iniciada en segundo plano.',
+      contentGoal,
+      message: contentGoal === 'viral_video'
+        ? 'Video viral creado. Generación iniciada en segundo plano.'
+        : 'Curso creado. Generación de contenido iniciada en segundo plano.',
     };
   }
 
@@ -140,6 +150,7 @@ export class GenerationService {
     videoType: VideoType = 'slides',
     avatarId?: string,
     heygenConfig?: HeyGenConfigDto,
+    contentGoal: 'course' | 'viral_video' = 'course',
   ) {
     const modules = await this.prisma.courseModule.findMany({
       where: { course_id: courseId },
@@ -167,11 +178,17 @@ export class GenerationService {
         });
 
         // Generate script
-        const moduleScript = await this.scriptGenerator.generateModuleScript(
-          mod.title,
-          textChunks[i] || '',
-          targetDurationMin,
-        );
+        const moduleScript = contentGoal === 'viral_video'
+          ? await this.scriptGenerator.generateViralScript(
+              mod.title,
+              documentText,
+              targetDurationMin,
+            )
+          : await this.scriptGenerator.generateModuleScript(
+              mod.title,
+              textChunks[i] || '',
+              targetDurationMin,
+            );
 
         // Save script to DB
         await this.prisma.courseModule.update({

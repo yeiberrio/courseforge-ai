@@ -52,6 +52,102 @@ export class ScriptGeneratorService {
     return this.generateLocally(moduleTitle, moduleContent, targetDurationMin);
   }
 
+  /**
+   * Generate a single viral video script from the full document.
+   * Optimized for YouTube: hook, development, CTA, no module splitting.
+   */
+  async generateViralScript(
+    title: string,
+    fullText: string,
+    targetDurationMin: number,
+    language = 'es',
+  ): Promise<ModuleScript> {
+    if (this.apiKey) {
+      return this.generateViralWithClaude(title, fullText, targetDurationMin, language);
+    }
+    return this.generateLocally(title, fullText, targetDurationMin);
+  }
+
+  private async generateViralWithClaude(
+    title: string,
+    fullText: string,
+    targetDurationMin: number,
+    language: string,
+  ): Promise<ModuleScript> {
+    const wordsNeeded = targetDurationMin * 150;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey!,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 8192,
+        messages: [{
+          role: 'user',
+          content: `Genera un guión de NARRACIÓN HABLADA para UN SOLO VIDEO VIRAL de YouTube.
+
+TÍTULO: ${title}
+CONTENIDO BASE:
+${fullText.substring(0, 12000)}
+
+REGLAS CRÍTICAS:
+- Este es UN SOLO VIDEO COMPLETO, NO un curso dividido en módulos.
+- El "script" debe contener EXACTAMENTE lo que el narrador dice en voz alta.
+- NO incluyas descripciones visuales, acotaciones ni corchetes.
+- Optimizado para YouTube: debe enganchar en los primeros 10 segundos.
+
+ESTRUCTURA DEL VIDEO VIRAL:
+1. HOOK (primeros 10-15 segundos): Pregunta impactante o dato sorprendente que enganche al espectador
+2. INTRODUCCIÓN (30 segundos): Presenta el tema y por qué importa
+3. DESARROLLO (cuerpo principal): Explica el contenido con ejemplos, datos, historias
+4. MOMENTO CLAVE: El punto más valioso o revelación principal
+5. CIERRE + CTA (últimos 30 segundos): Resumen potente + llamada a la acción (suscribirse, comentar, compartir)
+
+REQUISITOS:
+- Duración objetivo: ${targetDurationMin} minutos (~${wordsNeeded} palabras en el script)
+- Tono: dinámico, directo, conversacional. Como un creador de contenido exitoso.
+- Usa "tú" directamente al espectador.
+- Genera slides de apoyo visual (6-12 slides para todo el video)
+- Idioma: ${language === 'es' ? 'español' : language}
+
+Responde SOLO con JSON válido:
+{
+  "script": "texto completo del video viral...",
+  "slides": [
+    { "title": "título del slide", "content": ["punto 1", "punto 2", "punto 3"] }
+  ],
+  "estimatedDurationMin": ${targetDurationMin}
+}`,
+        }],
+      }),
+    });
+
+    const data = await response.json();
+    const content = data.content?.[0]?.text || '';
+
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          moduleTitle: title,
+          moduleOrder: 1,
+          script: parsed.script,
+          slides: parsed.slides,
+          estimatedDurationMin: parsed.estimatedDurationMin || targetDurationMin,
+        };
+      }
+    } catch (e) {
+      this.logger.warn('Failed to parse Claude viral script response, falling back to local');
+    }
+
+    return this.generateLocally(title, fullText, targetDurationMin);
+  }
+
   // ─── Claude-powered generation ──────────────────────────────────────────
 
   private async analyzeWithClaude(text: string, language: string): Promise<CourseStructure> {
