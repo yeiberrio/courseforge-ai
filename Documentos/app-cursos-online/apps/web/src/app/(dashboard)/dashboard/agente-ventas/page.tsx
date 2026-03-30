@@ -14,6 +14,7 @@ import {
   Loader2,
   Send,
   Database,
+  Target,
 } from "lucide-react";
 
 interface AgentStats {
@@ -135,6 +136,12 @@ export default function AgenteVentasPage() {
             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-3 text-sm font-medium text-white hover:bg-brand-700"
           >
             <Send className="h-4 w-4" /> Probar chat
+          </Link>
+          <Link
+            href="/dashboard/agente-ventas/leads"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm font-medium text-brand-700 hover:bg-brand-100"
+          >
+            <Target className="h-4 w-4" /> Prospectos / Leads
           </Link>
           <Link
             href="/dashboard/agente-ventas/sesiones"

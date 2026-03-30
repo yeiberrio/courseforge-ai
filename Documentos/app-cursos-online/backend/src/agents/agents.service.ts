@@ -3,12 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'crypto';
 
-const SALES_SYSTEM_PROMPT = `Eres un agente de ventas inteligente y experto en tecnología. Tu objetivo es:
+const SALES_SYSTEM_PROMPT = `Eres un agente de ventas especializado EXCLUSIVAMENTE en los servicios de nuestra empresa de tecnología.
 
-1. Entender las necesidades del cliente o empresa
-2. Recomendar los servicios más adecuados según su situación
-3. Responder preguntas técnicas con claridad
-4. Guiar naturalmente hacia la contratación del servicio
+REGLA ABSOLUTA E INQUEBRANTABLE:
+- SOLO puedes hablar sobre nuestros servicios, la empresa y temas directamente relacionados con ventas.
+- Si el usuario pregunta algo que NO está relacionado con nuestros servicios (código, direcciones, recetas, tareas, traducciones, chistes, etc.), DEBES rechazar amablemente y redirigir a los servicios.
+- NUNCA respondas preguntas generales, de programación, culturales, de entretenimiento o cualquier tema ajeno a las ventas.
+- Respuesta ante preguntas fuera de tema: "Soy el asistente de ventas de [empresa]. Mi especialidad es ayudarte a encontrar la solución tecnológica ideal para tu negocio. ¿En qué puedo ayudarte con nuestros servicios?"
 
 SERVICIOS QUE OFRECEMOS:
 - Automatización de procesos empresariales (RPA, workflows, integraciones)
@@ -19,14 +20,20 @@ SERVICIOS QUE OFRECEMOS:
 - Aplicaciones móviles (Android, iOS nativas)
 - Aplicaciones híbridas (React Native, Flutter, Capacitor)
 
-REGLAS:
-- Usa el contexto de la base de conocimiento para dar respuestas precisas y específicas.
-- Si no tienes información sobre algo, dilo honestamente y ofrece agendar una reunión con un especialista.
-- Tono: profesional pero cercano y empático.
-- Siempre orienta la conversación hacia el cierre o siguiente paso (reunión, cotización, demo).
+TU OBJETIVO:
+1. Entender las necesidades del cliente o empresa
+2. Recomendar SOLO los servicios que ofrecemos, usando la información de la base de conocimiento
+3. Guiar la conversación hacia el cierre: agendar reunión, solicitar cotización o programar demo
+4. Capturar datos del prospecto: nombre, empresa, email, teléfono, necesidad principal
+
+REGLAS DE RESPUESTA:
+- Responde ÚNICAMENTE con información de la base de conocimiento y los servicios listados arriba.
+- Si no tienes información específica en la base de conocimiento, responde con lo que sabes de los servicios generales y ofrece agendar una reunión con un especialista.
+- Tono: profesional, cercano y orientado a ventas.
+- Siempre busca el siguiente paso: "¿Te gustaría agendar una reunión?", "¿Puedo enviarte una cotización?", "¿Quieres que un especialista te contacte?"
+- Cuando el cliente dé datos de contacto, confirma y ofrece el siguiente paso.
 - Responde en español a menos que el cliente escriba en otro idioma.
-- Sé conciso pero completo. No repitas información innecesariamente.
-- Cuando el cliente muestre interés, sugiere concretar (agenda, presupuesto, demo).`;
+- Sé conciso. No divagues.`;
 
 @Injectable()
 export class AgentsService {
@@ -63,6 +70,13 @@ export class AgentsService {
         },
       });
       this.logger.log('Created SALES agent config');
+    } else if (agent.personality !== SALES_SYSTEM_PROMPT) {
+      // Update personality if prompt changed
+      agent = await this.prisma.agentConfig.update({
+        where: { id: agent.id },
+        data: { personality: SALES_SYSTEM_PROMPT },
+      });
+      this.logger.log('Updated SALES agent personality');
     }
 
     return agent;
@@ -308,7 +322,101 @@ export class AgentsService {
       this.prisma.ragDocument.count({ where: { agent_config_id: agentId } }),
     ]);
 
-    return { totalSessions, totalMessages, totalDocuments: totalDocChunks };
+    const totalLeads = await this.prisma.lead.count();
+    const leadsByStatus = await this.prisma.lead.groupBy({ by: ['status'], _count: true });
+
+    return {
+      totalSessions,
+      totalMessages,
+      totalDocuments: totalDocChunks,
+      totalLeads,
+      leadsByStatus: Object.fromEntries(leadsByStatus.map((l) => [l.status, l._count])),
+    };
+  }
+
+  // ─── Leads (Prospectos) ─────────────────────────────────────
+
+  async createLead(data: {
+    name: string;
+    email?: string;
+    phone?: string;
+    company?: string;
+    source?: string;
+    interest?: string;
+    notes?: string;
+  }) {
+    return this.prisma.lead.create({ data: data as any });
+  }
+
+  async listLeads(status?: string) {
+    return this.prisma.lead.findMany({
+      where: status ? { status: status as any } : undefined,
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async updateLead(id: string, data: {
+    status?: string;
+    notes?: string;
+    interest?: string;
+    next_followup?: string;
+    last_contact_at?: string;
+  }) {
+    return this.prisma.lead.update({
+      where: { id },
+      data: {
+        ...(data.status ? { status: data.status as any } : {}),
+        ...(data.notes !== undefined ? { notes: data.notes } : {}),
+        ...(data.interest !== undefined ? { interest: data.interest } : {}),
+        ...(data.next_followup ? { next_followup: new Date(data.next_followup) } : {}),
+        ...(data.last_contact_at ? { last_contact_at: new Date(data.last_contact_at) } : {}),
+      },
+    });
+  }
+
+  async deleteLead(id: string) {
+    return this.prisma.lead.delete({ where: { id } });
+  }
+
+  /**
+   * Send email to a lead.
+   */
+  async sendEmail(to: string, subject: string, body: string) {
+    // Use fetch to send via a simple SMTP relay or email API
+    // For now, we'll use the OpenAI-compatible approach and log it
+    // In production, configure SMTP_* env vars and use nodemailer
+    const smtpHost = this.configService.get<string>('SMTP_HOST');
+    const smtpUser = this.configService.get<string>('SMTP_USER');
+    const smtpPass = this.configService.get<string>('SMTP_PASS');
+
+    if (!smtpHost || !smtpUser) {
+      this.logger.warn(`Email not sent (SMTP not configured). To: ${to}, Subject: ${subject}`);
+      return { sent: false, reason: 'SMTP no configurado. Configura SMTP_HOST, SMTP_USER y SMTP_PASS en las variables de entorno.' };
+    }
+
+    try {
+      // Dynamic import nodemailer
+      const nodemailer = await import('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: parseInt(this.configService.get<string>('SMTP_PORT') || '587'),
+        secure: false,
+        auth: { user: smtpUser, pass: smtpPass },
+      });
+
+      await transporter.sendMail({
+        from: smtpUser,
+        to,
+        subject,
+        html: body,
+      });
+
+      this.logger.log(`Email sent to ${to}: ${subject}`);
+      return { sent: true, to, subject };
+    } catch (err) {
+      this.logger.error(`Email failed to ${to}: ${err.message}`);
+      return { sent: false, reason: err.message };
+    }
   }
 
   // ─── Helpers ─────────────────────────────────────────────────

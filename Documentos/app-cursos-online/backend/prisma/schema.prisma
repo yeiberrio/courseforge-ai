@@ -473,6 +473,38 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+model Lead {
+  id              String     @id @default(uuid())
+  name            String
+  email           String?
+  phone           String?
+  company         String?
+  source          String     @default("manual")  // manual, chat, web_search
+  status          LeadStatus @default(NEW)
+  interest        String?                         // What service they're interested in
+  notes           String?
+  last_contact_at DateTime?
+  next_followup   DateTime?
+  assigned_to     String?                         // User ID of sales person
+  created_at      DateTime   @default(now())
+  updated_at      DateTime   @updatedAt
+
+  @@index([status])
+  @@index([email])
+  @@map("leads")
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  INTERESTED
+  MEETING_SCHEDULED
+  PROPOSAL_SENT
+  NEGOTIATING
+  WON
+  LOST
+}
+
 model AffiliateLink {
   id             String @id @default(uuid())
   user_id        String
