@@ -226,21 +226,53 @@ export class KnowledgeBaseService {
   }
 
   /**
-   * Get download info for a KB document.
+   * Get downloadable content for a KB document.
+   * Tries local file first, falls back to reconstructing from RAG chunks.
    */
-  async getDownloadInfo(id: string): Promise<{ filePath: string; fileName: string }> {
+  async getDownloadContent(id: string): Promise<{ content: string; fileName: string }> {
     const doc = await this.prisma.knowledgeBaseDocument.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException('Documento no encontrado');
-
-    const filePath = join(process.cwd(), doc.file_path);
-    if (!existsSync(filePath)) {
-      throw new NotFoundException('Archivo no encontrado en el servidor');
-    }
 
     const safeTitle = doc.title.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s\-_]/g, '').trim().replace(/\s+/g, '_');
     const fileName = `${safeTitle}.txt`;
 
-    return { filePath, fileName };
+    // Try local file first
+    const filePath = join(process.cwd(), doc.file_path);
+    if (existsSync(filePath)) {
+      const { readFileSync } = await import('fs');
+      return { content: readFileSync(filePath, 'utf-8'), fileName };
+    }
+
+    // Fallback: reconstruct from RAG chunks
+    const chunks = await this.prisma.ragDocument.findMany({
+      where: {
+        title: { startsWith: doc.title.substring(0, 30) },
+      },
+      orderBy: { created_at: 'asc' },
+    });
+
+    if (chunks.length > 0) {
+      const content = `${doc.title}\n${'='.repeat(doc.title.length)}\n\n` +
+        `Categoría: ${doc.category || 'General'}\n` +
+        `Fuente: ${doc.source_type}\n` +
+        `Tags: ${doc.tags.join(', ')}\n\n` +
+        `${'─'.repeat(50)}\n\n` +
+        chunks.map((c) => c.content_text).join('\n\n');
+      return { content, fileName };
+    }
+
+    // Fallback: if viral content, try ViralContentProcessing
+    if (doc.source_type === 'VIRAL_CONTENT' && doc.viral_video_id) {
+      const processing = await this.prisma.viralContentProcessing.findFirst({
+        where: { viral_video_id: doc.viral_video_id },
+        orderBy: { created_at: 'desc' },
+      });
+      if (processing?.processed_content) {
+        return { content: processing.processed_content, fileName };
+      }
+    }
+
+    throw new NotFoundException('No se pudo recuperar el contenido del documento');
   }
 
   /**

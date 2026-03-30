@@ -73,10 +73,10 @@ export class KnowledgeBaseController {
   @Roles(UserRole.CREATOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Descargar archivo de la base de conocimiento' })
   async downloadDocument(@Param('id') id: string, @Res() res: Response) {
-    const { filePath, fileName } = await this.kbService.getDownloadInfo(id);
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    const { content, fileName } = await this.kbService.getDownloadContent(id);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.sendFile(filePath);
+    res.send(content);
   }
 
   @Delete(':id')
