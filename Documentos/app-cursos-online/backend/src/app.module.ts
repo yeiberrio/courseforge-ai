@@ -13,6 +13,7 @@ import { GenerationModule } from './generation/generation.module';
 import { YouTubeModule } from './youtube/youtube.module';
 import { ViralModule } from './viral/viral.module';
 import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
+import { AgentsModule } from './agents/agents.module';
 
 @Controller('health')
 class HealthController {
@@ -40,6 +41,7 @@ class HealthController {
     YouTubeModule,
     ViralModule,
     KnowledgeBaseModule,
+    AgentsModule,
   ],
 })
 export class AppModule {}
