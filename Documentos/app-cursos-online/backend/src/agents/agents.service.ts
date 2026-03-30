@@ -173,7 +173,7 @@ export class AgentsService {
       content: m.content,
     }));
 
-    // Call Claude API
+    // Call LLM API (Claude or OpenAI)
     let assistantResponse = 'Lo siento, no puedo responder en este momento. Por favor intenta de nuevo.';
 
     if (this.anthropicApiKey) {
@@ -197,6 +197,31 @@ export class AgentsService {
         assistantResponse = data.content?.[0]?.text || assistantResponse;
       } catch (err) {
         this.logger.error(`Claude API error: ${err.message}`);
+      }
+    } else if (this.openaiApiKey) {
+      try {
+        const openaiMessages = [
+          { role: 'system' as const, content: systemPrompt + contextBlock },
+          ...messages,
+        ];
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.openaiApiKey}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o',
+            max_tokens: 2048,
+            messages: openaiMessages,
+          }),
+        });
+
+        const data = await response.json();
+        assistantResponse = data.choices?.[0]?.message?.content || assistantResponse;
+      } catch (err) {
+        this.logger.error(`OpenAI API error: ${err.message}`);
       }
     }
 
