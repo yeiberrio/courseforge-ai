@@ -803,7 +803,12 @@ Modelos implementados:
 | **CourseModules** | CRUD | ✅ Completo |
 | **Enrollments** | enroll, progress tracking | ✅ Completo |
 | **Uploads** | upload document (PDF, DOCX, TXT, MD) | ✅ Completo |
-| **Generation** | analyze-document, create-course, progress, voices, avatars | ✅ Completo |
+| **Generation** | analyze-document, create-course (curso/viral), progress, voices, avatars, HeyGen | ✅ Completo |
+| **YouTube** | OAuth2, canales, publicaciones, publicar video | ✅ Completo |
+| **Viral** | search (multi-país/idioma/live), trending, history, transcribe, process | ✅ Completo |
+| **Knowledge Base** | list, stats, detail, ingest, search, download, delete | ✅ Completo |
+| **Agents** | sales agent config, chat, documents, sessions, stats, leads CRUD, email | ✅ Completo |
+| **Telegram** | Bot polling, /start, /servicios, /reunion, /contacto, /nueva, auto-lead | ✅ Completo |
 | **Health** | healthcheck endpoint | ✅ Completo |
 
 ### 13.4 Servicios de generación de contenido
@@ -816,6 +821,10 @@ Modelos implementados:
 | **SlideService** | Genera slides SVG 1920x1080 (3 estilos) | ✅ Completo |
 | **VideoAssemblyService** | Ensambla slides + audio → MP4 con FFmpeg | ✅ Completo |
 | **AvatarVideoService** | Genera video con avatar IA vía D-ID API | ✅ Completo |
+| **HeyGenVideoService** | Avatar IA avanzado (escenas, emociones, velocidad) | ✅ Completo |
+| **StorageService** | Supabase Storage para videos persistentes | ✅ Completo |
+| **AgentsService** | Agente de ventas con chat IA + RAG + leads + email | ✅ Completo |
+| **TelegramService** | Bot de Telegram con Telegraf (polling mode) | ✅ Completo |
 
 ### 13.5 Frontend — Páginas implementadas
 
@@ -832,6 +841,15 @@ Modelos implementados:
 | Detalle curso | `/dashboard/cursos/detalle?id=X` | Ver/editar curso + módulos |
 | Usuarios | `/dashboard/usuarios` | Lista usuarios (admin) |
 | Aprendizaje | `/dashboard/aprendizaje` | Cursos del estudiante |
+| YouTube | `/dashboard/youtube` | Hub YouTube (canales, publicar, publicaciones) |
+| Contenido Viral | `/dashboard/viral` | Búsqueda viral con filtros avanzados |
+| Procesar Viral | `/dashboard/viral/procesar` | Transcripción + procesamiento IA |
+| Base Conocimiento | `/dashboard/conocimiento` | Lista docs + búsqueda semántica + descarga |
+| KB Detalle | `/dashboard/conocimiento/detalle?id=X` | Detalle doc + descarga + desactivar |
+| Agente Ventas | `/dashboard/agente-ventas` | Config agente + stats + ingesta docs |
+| Chat Agente | `/dashboard/agente-ventas/chat` | Chat web con agente de ventas |
+| Sesiones | `/dashboard/agente-ventas/sesiones` | Historial sesiones + mensajes |
+| Leads/CRM | `/dashboard/agente-ventas/leads` | Pipeline prospectos + email |
 | Perfil | `/dashboard/perfil` | Editar perfil |
 
 ### 13.6 Flujo de generación de curso (implementado)
@@ -886,6 +904,11 @@ Modelos implementados:
 - `YOUTUBE_API_KEY` — API Key de YouTube Data API v3
 - `YOUTUBE_CLIENT_ID` — OAuth2 Client ID de Google Cloud
 - `YOUTUBE_CLIENT_SECRET` — OAuth2 Client Secret de Google Cloud
+- `TELEGRAM_BOT_TOKEN` — Token del bot de Telegram (@BotFather)
+- `SMTP_HOST` — Host SMTP para envío de emails (ej: smtp.gmail.com)
+- `SMTP_USER` — Usuario SMTP
+- `SMTP_PASS` — Contraseña SMTP
+- `SMTP_PORT` — Puerto SMTP (default: 587)
 - `NODE_ENV` — `production`
 - `PORT` — `3000`
 
@@ -900,14 +923,29 @@ Modelos implementados:
 | Creator | `creator@courseforge.com` | `Creator2026*` |
 | Student | `student@courseforge.com` | `Student2026*` |
 
-### 13.9 Estado de implementación (actualizado 28/03/2026)
+### 13.9 Estado de implementación (actualizado 30/03/2026)
 
 **Generación de video con IA (completado):**
-- [x] Generación de guiones con OpenAI (GPT)
+- [x] Generación de guiones con OpenAI (GPT) y Claude API
 - [x] Generación de video con D-ID (avatar IA)
 - [x] Generación de video con HeyGen (avatar IA avanzado)
 - [x] Formulario multi-paso de generación en frontend
 - [x] Polling de progreso de generación
+- [x] Selector de objetivo: Curso completo (multi-módulo) vs Video viral (un solo video YouTube)
+- [x] Script viral con hook + desarrollo + CTA optimizado para YouTube
+- [x] Supabase Storage para videos persistentes
+
+**Contenido Viral — Filtros avanzados (completado 29/03/2026):**
+- [x] Filtro multi-país (15 países, llamadas paralelas por regionCode)
+- [x] Filtro multi-idioma (12 idiomas con multi-select chips)
+- [x] Filtro de transmisiones en vivo (eventType=live con badge "EN VIVO")
+- [x] Filtro de comentarios mínimos
+- [x] Ordenamiento: vistas, likes, comentarios, engagement rate
+- [x] Engagement rate calculado: (likes + comments) / views * 100
+- [x] Protección de cuota: máx 6 llamadas API por búsqueda con warning
+- [x] Deduplicación de resultados entre llamadas paralelas
+- [x] Migración: expand_viral_categories (20 categorías)
+- [x] Migración: add_advanced_viral_filters (countries, languages, min_comments, event_type, sort_by)
 
 **YouTube — Publicación y contenido viral (backend + frontend completados):**
 - [x] Backend: módulo YouTube (controller, service, module)
@@ -915,64 +953,101 @@ Modelos implementados:
 - [x] Backend: endpoint GET /viral/videos/:youtubeVideoId (busca por YouTube ID o UUID)
 - [x] Backend: transcribeVideo y processContent aceptan tanto UUID como YouTube video ID
 - [x] Backend: procesamiento de contenido viral con OpenAI GPT-4o (fallback a Anthropic Claude)
-- [x] Backend: error handling robusto en viral controller (try/catch con HttpException)
-- [x] Backend: removido videoCategoryId incompatible con YouTube Search API type=video
-- [x] Frontend: página principal YouTube con navegación a subpáginas
-- [x] Frontend: páginas de conectar canal, canales, publicar, publicaciones
-- [x] Frontend: página de contenido viral con filtros y búsqueda (funcional en producción)
-- [x] Frontend: página de procesar video viral (transcripción funcional, mapeo correcto de respuesta backend)
-- [x] Frontend: null-safe rendering con Array.isArray() para modules en paso 4 (Done)
+- [x] Frontend: página de contenido viral con filtros avanzados y búsqueda
+- [x] Frontend: página de procesar video viral (transcripción + procesamiento)
 - [x] Sidebar: enlaces a YouTube, Contenido Viral, Base de Conocimiento
 
 **YouTube OAuth2 — Conectar canal:**
 - [x] Backend: YOUTUBE_REDIRECT_URI configurado en Railway
 - [x] Backend: redirect URI correcto con prefijo /api/v1/youtube/callback
-- [ ] Google Cloud Console: agregar email como Test User en OAuth consent screen (app en modo Testing → 403 access_denied)
-- [ ] Opción: publicar app OAuth en Google Cloud para acceso general (requiere verificación)
+- [ ] Google Cloud Console: agregar email como Test User en OAuth consent screen
+- [ ] Opción: publicar app OAuth en Google Cloud para acceso general
 
-**Base de Conocimiento (backend + frontend completados):**
+**Base de Conocimiento (completado + descarga):**
 - [x] Backend: módulo Knowledge Base (controller, service, module)
 - [x] Frontend: página de base de conocimiento y detalle
+- [x] Descarga de documentos: GET /knowledge-base/:id/download
+- [x] Conversión JSON → texto limpio para descarga (secciones, puntos clave, tags)
+- [x] Fallback: reconstruye contenido desde RAG chunks o ViralContentProcessing cuando archivo local no existe (Railway filesystem efímero)
+- [x] Botón de descarga en lista y detalle de documentos
+
+**Agente de Ventas Inteligente (completado 29-30/03/2026):**
+- [x] Backend: AgentsModule (service, controller) con 12 endpoints
+- [x] Agente SALES con prompt de persuasión avanzada (7 técnicas: escucha activa, dolor→solución, prueba social, urgencia, ancla de precio, reciprocidad, cierre asumido)
+- [x] Portafolio de servicios con precios en USD y COP
+- [x] Chat con IA: OpenAI GPT-4o (fallback a Claude) + contexto RAG de KB propia
+- [x] Agente estricto: SOLO responde sobre servicios del negocio, rechaza preguntas fuera de tema
+- [x] Configuración dinámica desde frontend: nombre, tono, personalidad/prompt, mensaje bienvenida, respuesta fuera de tema
+- [x] Botón "Restaurar por defecto" para resetear prompt
+- [x] Ingesta de documentos en KB del agente (separada de KB viral)
+- [x] Gestión de sesiones y historial de mensajes
+- [x] Estadísticas: sesiones, mensajes, documentos, leads
+
+**CRM de Leads/Prospectos (completado 29/03/2026):**
+- [x] Modelo Lead en Prisma con 8 estados de pipeline
+- [x] Pipeline: NEW → CONTACTED → INTERESTED → MEETING_SCHEDULED → PROPOSAL_SENT → NEGOTIATING → WON/LOST
+- [x] CRUD completo de leads
+- [x] Filtro por estado
+- [x] Envío de email a leads (nodemailer + SMTP)
+- [x] Modal de composición de email en frontend
+- [x] Migración: add_leads_table
+- [x] Frontend: /agente-ventas/leads con crear, editar estado, email, eliminar
+
+**Telegram Bot (completado 29-30/03/2026):**
+- [x] Integración Telegraf con polling mode
+- [x] Todos los mensajes se rutean al agente de ventas (mismo prompt estricto)
+- [x] Auto-creación de leads desde usuarios de Telegram
+- [x] Comandos: /start (bienvenida + reset sesión), /servicios, /reunion, /contacto, /nueva
+- [x] /start y /nueva limpian sesión para aplicar cambios de config
+- [x] Mensaje de bienvenida dinámico configurable desde frontend
+- [x] Respuesta fuera de tema dinámica configurable desde frontend
+- [x] Limpieza de Markdown para compatibilidad con Telegram
+- [x] Requiere: TELEGRAM_BOT_TOKEN en Railway
+
+**Frontend — Nuevas páginas (completado):**
+- [x] /dashboard/agente-ventas — Config del agente + stats + ingesta documentos
+- [x] /dashboard/agente-ventas/chat — Chat web completo con burbujas + typing indicator
+- [x] /dashboard/agente-ventas/sesiones — Historial de sesiones con visor de mensajes
+- [x] /dashboard/agente-ventas/leads — CRM de prospectos con pipeline y email
+- [x] Sidebar: "Agente de Ventas" con icono Bot
 
 **Base de datos producción (Railway):**
-- [x] Migración init (tablas base: users, courses, modules, etc.)
-- [x] Migración add_youtube_viral_kb_tables (6 tablas nuevas: youtube_channels, youtube_publications, viral_searches, viral_videos, viral_content_processing, knowledge_base_documents)
-- [x] prisma migrate deploy se ejecuta automáticamente en CMD del Dockerfile al iniciar container
-- [x] Build script: `rm -rf .next out && next build` (limpia cache antes de compilar)
+- [x] Migración init
+- [x] Migración add_youtube_viral_kb_tables
+- [x] Migración expand_viral_categories (20 categorías enum)
+- [x] Migración add_advanced_viral_filters (countries, languages, etc.)
+- [x] Migración add_leads_table (CRM pipeline)
+- [x] prisma migrate deploy automático en CMD del Dockerfile
+- [x] Build script: `npx prisma generate && nest build`
 
 **Despliegue:**
-- [x] Backend: Railway (Docker, auto-deploy desde main, Dockerfile multi-stage)
+- [x] Backend: Railway (Docker, auto-deploy desde main)
   - Build: npm ci → prisma generate → nest build
   - CMD: prisma migrate deploy → node dist/src/main.js
-- [x] Frontend: Vercel (static export a /out)
-  - Root Directory: (vacío)
-  - Build Command: `cd Documentos/app-cursos-online/apps/web && npm run build`
-  - Install Command: `cd Documentos/app-cursos-online/apps/web && npm install`
-  - Output Directory: `Documentos/app-cursos-online/apps/web/out`
-  - Framework Preset: Other
-  - next.config.mjs: output 'export', generateBuildId con crypto.randomUUID()
-- [x] Nota: git root está en /home/angel (no en app-cursos-online), paths en git son Documentos/app-cursos-online/...
+- [x] Frontend: Vercel (static export)
+  - vercel.json: `{ "outputDirectory": "out" }`
+  - Build desde root con turbo (prisma generate antes de nest build para compatibilidad)
+- [x] Nota: git root está en /home/angel, paths en git son Documentos/app-cursos-online/...
 
 **APIs configuradas (local + Railway):**
-- [x] OpenAI GPT-4o (generación de guiones + procesamiento de contenido viral)
+- [x] OpenAI GPT-4o (guiones, embeddings, agente de ventas, procesamiento viral)
 - [x] HeyGen (avatar IA)
 - [x] D-ID (avatar IA alternativo)
 - [x] YouTube Data API v3 (búsqueda viral, trending)
-- [x] YouTube OAuth2 (Client ID + Secret + Redirect URI para publicar en nombre del creador)
-- [ ] Anthropic Claude (fallback para procesamiento viral, no configurada aún)
+- [x] YouTube OAuth2 (Client ID + Secret + Redirect URI)
+- [x] Telegram Bot API (agente de ventas via Telegraf)
+- [x] Edge TTS (Microsoft, gratis, 6+ voces español)
+- [x] Supabase Storage (videos persistentes)
+- [ ] Anthropic Claude (fallback, no configurada en Railway)
 
 **APIs pendientes por configurar:**
-- [ ] ElevenLabs (clonación de voz / TTS)
+- [ ] SMTP (envío de emails a leads — requiere SMTP_HOST, SMTP_USER, SMTP_PASS)
+- [ ] WhatsApp Business API (Meta) — integración pendiente
+- [ ] Vapi.ai / Bland.ai (agente de ventas por llamadas con voz IA)
+- [ ] ElevenLabs (clonación de voz / TTS premium)
 - [ ] Stripe (pagos internacionales)
 - [ ] Wompi (pagos Colombia)
-- [ ] Resend (emails transaccionales)
-- [ ] Mux (video hosting/streaming)
-- [ ] Upstash Redis (colas BullMQ)
 - [ ] Sentry (monitoreo de errores)
-
-**Pendiente — Procesamiento viral:**
-- [ ] API key de OpenAI válida (la actual está expirada/inválida, requiere nueva key en Railway)
-- [ ] Transcripción real con Whisper API (actualmente usa subtítulos de YouTube o fallback con metadatos)
 
 **Pendiente — Fase 1 restante:**
 - [ ] Player de video en detalle del curso (actualmente muestra URL)
@@ -980,9 +1055,10 @@ Modelos implementados:
 - [ ] Aprobar/rechazar módulos en revisión
 
 **Pendiente — Fase 2:**
-- [ ] Agentes IA (ventas, tutor, soporte) con RAG
+- [ ] WhatsApp Business API (agente de ventas por WhatsApp)
+- [ ] Agente de ventas con llamadas de voz IA (Vapi.ai)
 - [ ] Certificados verificables (PDF + QR)
-- [ ] Email sequences (Resend)
+- [ ] Email sequences automáticas
 - [ ] Pagos (Stripe / Wompi)
 - [ ] Clonación de voz (ElevenLabs)
 - [ ] Miniaturas automáticas (DALL-E)
@@ -992,7 +1068,7 @@ Modelos implementados:
 - [ ] Clips automáticos para redes
 - [ ] Blog SEO automático
 - [ ] Analytics avanzados
-- [ ] WhatsApp Business API
+- [ ] Web scraping de leads potenciales
 
 ---
 
