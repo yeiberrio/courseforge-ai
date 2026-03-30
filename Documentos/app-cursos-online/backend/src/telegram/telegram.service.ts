@@ -32,27 +32,28 @@ export class TelegramService implements OnModuleInit {
       const agent = await this.agentsService.getOrCreateSalesAgent();
       this.salesAgentId = agent.id;
 
-      // Handle /start command
+      // Handle /start command — reset session + welcome
       this.bot.start(async (ctx) => {
-        const firstName = ctx.from.first_name || 'cliente';
+        const chatId = ctx.chat.id.toString();
+        await this.resetSession(chatId);
 
-        // Get dynamic welcome message from agent config
+        const firstName = ctx.from.first_name || 'cliente';
         const currentAgent = await this.agentsService.getOrCreateSalesAgent();
         const customWelcome = (currentAgent.escalation_rules as any)?.welcomeMessage;
 
         const welcomeMsg = customWelcome
           ? customWelcome.replace('{nombre}', firstName)
-          : `Hola ${firstName}! 👋\n\nSoy el asistente de ventas. Puedo ayudarte con:\n\n` +
-            `• Automatizacion de procesos\n` +
-            `• Documentacion de procesos\n` +
-            `• Entrenamiento en herramientas de IA\n` +
-            `• Desarrollo web y movil\n\n` +
-            `Escribe tu consulta y te ayudo! 🚀`;
+          : `Hola ${firstName}! Soy el asistente de ventas. Puedo ayudarte con automatizacion, desarrollo web y movil, y entrenamiento en IA. Escribe tu consulta!`;
 
         await ctx.reply(welcomeMsg);
-
-        // Auto-create lead from Telegram user
         await this.ensureLead(ctx.from);
+      });
+
+      // Handle /nueva command — reset conversation
+      this.bot.command('nueva', async (ctx) => {
+        const chatId = ctx.chat.id.toString();
+        await this.resetSession(chatId);
+        await ctx.reply('Conversacion reiniciada. Escribe tu consulta!');
       });
 
       // Handle /servicios command
@@ -189,6 +190,19 @@ export class TelegramService implements OnModuleInit {
       process.once('SIGTERM', () => this.bot?.stop('SIGTERM'));
     } catch (err) {
       this.logger.error(`Failed to start Telegram bot: ${err.message}`);
+    }
+  }
+
+  /**
+   * Delete old session so next message creates a fresh one.
+   */
+  private async resetSession(chatId: string) {
+    const sessionToken = `telegram-${chatId}`;
+    const session = await this.prisma.chatSession.findUnique({ where: { session_token: sessionToken } });
+    if (session) {
+      await this.prisma.chatMessage.deleteMany({ where: { session_id: session.id } });
+      await this.prisma.chatSession.delete({ where: { id: session.id } });
+      this.logger.log(`[Telegram] Session reset for ${chatId}`);
     }
   }
 
