@@ -217,4 +217,37 @@ export class ViralController {
       );
     }
   }
+
+  @Post('export/sheets')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Exportar videos virales a Google Sheets (append al historial)' })
+  async exportToGoogleSheets(
+    @CurrentUser('id') userId: string,
+    @Body() body: {
+      videos: {
+        videoId: string;
+        title: string;
+        channelTitle: string;
+        viewCount: number;
+        likeCount: number;
+        commentCount?: number;
+        engagementRate?: number;
+        duration: string;
+        publishedAt: string;
+        category?: string;
+      }[];
+      category?: string;
+    },
+  ) {
+    try {
+      return await this.viralService.exportToGoogleSheets(userId, body.videos, body.category);
+    } catch (error) {
+      this.logger.error(`Google Sheets export failed: ${error.message}`);
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        error.message || 'Error al exportar a Google Sheets',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
 }

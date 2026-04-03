@@ -44,6 +44,8 @@ export class YouTubeService {
       'https://www.googleapis.com/auth/youtube.upload',
       'https://www.googleapis.com/auth/youtube.readonly',
       'https://www.googleapis.com/auth/youtube',
+      'https://www.googleapis.com/auth/spreadsheets',
+      'https://www.googleapis.com/auth/drive.file',
     ];
 
     const params = new URLSearchParams({
@@ -96,7 +98,7 @@ export class YouTubeService {
         access_token_encrypted: tokens.access_token,
         refresh_token_encrypted: tokens.refresh_token,
         token_expiry: new Date(tokens.expiry_date || Date.now() + 3600 * 1000),
-        scopes: ['youtube.upload', 'youtube.readonly', 'youtube'],
+        scopes: ['youtube.upload', 'youtube.readonly', 'youtube', 'spreadsheets', 'drive.file'],
         is_active: true,
       },
     });

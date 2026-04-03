@@ -295,6 +295,8 @@ export default function ViralPage() {
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingSheets, setExportingSheets] = useState(false);
+  const [sheetsUrl, setSheetsUrl] = useState<string | null>(null);
 
   // API call count warning
   const apiCalls = Math.max(1, (selectedLanguages.length || 1) * (selectedCountries.length || 1));
@@ -389,6 +391,32 @@ export default function ViralPage() {
       setError(message);
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleExportSheets = async () => {
+    if (!token || results.length === 0) return;
+    setExportingSheets(true);
+    setSheetsUrl(null);
+
+    try {
+      const data = await api.post<{ spreadsheetUrl: string; rowsAdded: number }>(
+        "/viral/export/sheets",
+        {
+          videos: results.map((v) => ({
+            ...v,
+            category: selectedCategory,
+          })),
+          category: selectedCategory,
+        },
+        token,
+      );
+      setSheetsUrl(data.spreadsheetUrl);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Error al exportar a Google Sheets";
+      setError(message);
+    } finally {
+      setExportingSheets(false);
     }
   };
 
@@ -658,6 +686,27 @@ export default function ViralPage() {
         </div>
       )}
 
+      {/* Google Sheets success */}
+      {sheetsUrl && (
+        <div className="mb-6 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+          <FileSpreadsheet className="h-4 w-4 shrink-0" />
+          <span>
+            Videos agregados al historial de Google Sheets.{" "}
+            <a
+              href={sheetsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium underline hover:no-underline"
+            >
+              Abrir spreadsheet
+            </a>
+          </span>
+          <button onClick={() => setSheetsUrl(null)} className="ml-auto text-xs underline">
+            Cerrar
+          </button>
+        </div>
+      )}
+
       {/* Search Results */}
       {hasSearched && (
         <div className="mb-8">
@@ -672,18 +721,32 @@ export default function ViralPage() {
               )}
             </h2>
             {results.length > 0 && (
-              <button
-                onClick={handleExport}
-                disabled={exporting}
-                className="flex items-center gap-2 rounded-lg border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 transition-colors hover:bg-green-100 disabled:opacity-50"
-              >
-                {exporting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileSpreadsheet className="h-4 w-4" />
-                )}
-                {exporting ? "Exportando..." : "Exportar Excel"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportSheets}
+                  disabled={exportingSheets}
+                  className="flex items-center gap-2 rounded-lg border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 transition-colors hover:bg-green-100 disabled:opacity-50"
+                >
+                  {exportingSheets ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="h-4 w-4" />
+                  )}
+                  {exportingSheets ? "Guardando..." : "Google Sheets"}
+                </button>
+                <button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {exporting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="h-4 w-4" />
+                  )}
+                  {exporting ? "Exportando..." : "Descargar Excel"}
+                </button>
+              </div>
             )}
           </div>
 

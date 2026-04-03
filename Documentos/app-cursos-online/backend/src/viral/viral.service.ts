@@ -1297,6 +1297,199 @@ Extrae los segmentos más valiosos en formato JSON.`;
     return Buffer.from(arrayBuffer);
   }
 
+  /**
+   * Export viral videos to a Google Sheet (append to existing or create new).
+   * Requires YouTube OAuth with Sheets scope.
+   */
+  async exportToGoogleSheets(userId: string, videos: {
+    videoId: string;
+    title: string;
+    channelTitle: string;
+    viewCount: number;
+    likeCount: number;
+    commentCount?: number;
+    engagementRate?: number;
+    duration: string;
+    publishedAt: string;
+    category?: string;
+  }[], category?: string): Promise<{ spreadsheetId: string; spreadsheetUrl: string; rowsAdded: number }> {
+    // Get YouTube OAuth token
+    const channel = await this.prisma.youTubeChannel.findFirst({
+      where: { user_id: userId, is_active: true },
+      orderBy: { connected_at: 'desc' },
+    });
+
+    if (!channel) {
+      throw new BadRequestException('Conecta tu canal de YouTube primero (se requiere OAuth con permisos de Google Sheets). Ve a YouTube → Conectar canal.');
+    }
+
+    // Get valid access token (refresh if needed)
+    const accessToken = await this.getValidAccessToken(channel);
+
+    // Check if spreadsheet already exists for this user
+    let spreadsheetId = await this.getViralSpreadsheetId(userId);
+    let isNew = false;
+
+    if (!spreadsheetId) {
+      // Create new spreadsheet
+      spreadsheetId = await this.createViralSpreadsheet(accessToken);
+      await this.saveViralSpreadsheetId(userId, spreadsheetId);
+      isNew = true;
+    }
+
+    // Build rows to append
+    const now = new Date().toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const rows = videos.map((v) => [
+      v.title,
+      v.channelTitle,
+      this.getCategoryLabel(v.category || category || ''),
+      v.viewCount,
+      v.likeCount,
+      v.commentCount || 0,
+      v.engagementRate ? `${v.engagementRate.toFixed(1)}%` : '0%',
+      v.duration,
+      v.publishedAt ? new Date(v.publishedAt).toLocaleDateString('es-CO') : '',
+      `https://www.youtube.com/watch?v=${v.videoId}`,
+      now,
+    ]);
+
+    // If new spreadsheet, add header row first
+    if (isNew) {
+      await this.appendToSheet(accessToken, spreadsheetId, [
+        ['Titulo', 'Canal', 'Categoria', 'Vistas', 'Likes', 'Comentarios', 'Engagement %', 'Duracion', 'Publicado', 'URL YouTube', 'Exportado el'],
+      ]);
+    }
+
+    // Append data rows
+    await this.appendToSheet(accessToken, spreadsheetId, rows);
+
+    const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+    this.logger.log(`Exported ${rows.length} viral videos to Google Sheets: ${spreadsheetUrl}`);
+
+    return {
+      spreadsheetId,
+      spreadsheetUrl,
+      rowsAdded: rows.length,
+    };
+  }
+
+  private async getValidAccessToken(channel: {
+    id: string;
+    refresh_token_encrypted: string | null;
+    access_token_encrypted: string | null;
+    token_expiry: Date | null;
+  }): Promise<string> {
+    if (channel.token_expiry && new Date(channel.token_expiry) > new Date()) {
+      return channel.access_token_encrypted || '';
+    }
+
+    if (!channel.refresh_token_encrypted) {
+      throw new BadRequestException('Token expirado. Reconecta tu canal de YouTube.');
+    }
+
+    const clientId = this.configService.get<string>('YOUTUBE_CLIENT_ID') || '';
+    const clientSecret = this.configService.get<string>('YOUTUBE_CLIENT_SECRET') || '';
+
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: channel.refresh_token_encrypted,
+        grant_type: 'refresh_token',
+      }),
+    });
+
+    if (!response.ok) throw new BadRequestException('No se pudo refrescar el token OAuth. Reconecta tu canal.');
+
+    const tokens = await response.json();
+
+    await this.prisma.youTubeChannel.update({
+      where: { id: channel.id },
+      data: {
+        access_token_encrypted: tokens.access_token,
+        token_expiry: new Date(Date.now() + (tokens.expires_in || 3600) * 1000),
+        last_used_at: new Date(),
+      },
+    });
+
+    return tokens.access_token;
+  }
+
+  private async getViralSpreadsheetId(userId: string): Promise<string | null> {
+    const record = await this.prisma.viralSearch.findFirst({
+      where: { user_id: userId, spreadsheet_id: { not: null } },
+      orderBy: { created_at: 'desc' },
+      select: { spreadsheet_id: true },
+    });
+    return record?.spreadsheet_id || null;
+  }
+
+  private async saveViralSpreadsheetId(userId: string, spreadsheetId: string): Promise<void> {
+    // Save on the most recent search so we can retrieve it later
+    const latestSearch = await this.prisma.viralSearch.findFirst({
+      where: { user_id: userId },
+      orderBy: { created_at: 'desc' },
+    });
+    if (latestSearch) {
+      await this.prisma.viralSearch.update({
+        where: { id: latestSearch.id },
+        data: { spreadsheet_id: spreadsheetId },
+      });
+    }
+  }
+
+  private async createViralSpreadsheet(accessToken: string): Promise<string> {
+    const response = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        properties: {
+          title: `CourseForge - Contenido Viral`,
+        },
+        sheets: [{
+          properties: {
+            title: 'Historial Viral',
+            gridProperties: { frozenRowCount: 1 },
+          },
+        }],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      this.logger.error(`Google Sheets create failed: ${JSON.stringify(err)}`);
+      throw new Error(err.error?.message || 'No se pudo crear el spreadsheet. Reconecta tu canal con los permisos de Google Sheets.');
+    }
+
+    const data = await response.json();
+    return data.spreadsheetId;
+  }
+
+  private async appendToSheet(accessToken: string, spreadsheetId: string, rows: any[][]): Promise<void> {
+    const response = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/A:K:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ values: rows }),
+      },
+    );
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      this.logger.error(`Google Sheets append failed: ${JSON.stringify(err)}`);
+      throw new Error(err.error?.message || 'Error al escribir en Google Sheets');
+    }
+  }
+
   // ─── Private helpers ──────────────────────────────────────────────
 
   private getCategoryLabel(key: string): string {
