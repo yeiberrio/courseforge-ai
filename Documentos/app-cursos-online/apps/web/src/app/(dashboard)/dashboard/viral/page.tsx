@@ -41,6 +41,7 @@ import {
   ChevronDown,
   AlertTriangle,
   Globe,
+  FileSpreadsheet,
 } from "lucide-react";
 
 type Category =
@@ -293,6 +294,7 @@ export default function ViralPage() {
   const [loadingTrending, setLoadingTrending] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // API call count warning
   const apiCalls = Math.max(1, (selectedLanguages.length || 1) * (selectedCountries.length || 1));
@@ -346,6 +348,47 @@ export default function ViralPage() {
       setResults([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    if (!token || results.length === 0) return;
+    setExporting(true);
+
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1";
+      const response = await fetch(`${API_URL}/viral/export`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          videos: results.map((v) => ({
+            ...v,
+            category: selectedCategory,
+          })),
+          category: selectedCategory,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Error al exportar");
+
+      const blob = await response.blob();
+      const date = new Date().toISOString().split("T")[0];
+      const filename = `contenido-viral-${selectedCategory.toLowerCase()}-${date}.xlsx`;
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Error al exportar";
+      setError(message);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -618,15 +661,31 @@ export default function ViralPage() {
       {/* Search Results */}
       {hasSearched && (
         <div className="mb-8">
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-gray-900">
-            <Search className="h-5 w-5 text-brand-600" />
-            Resultados de busqueda
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+              <Search className="h-5 w-5 text-brand-600" />
+              Resultados de busqueda
+              {results.length > 0 && (
+                <span className="ml-2 rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-medium text-brand-700">
+                  {results.length} videos
+                </span>
+              )}
+            </h2>
             {results.length > 0 && (
-              <span className="ml-2 rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-medium text-brand-700">
-                {results.length} videos
-              </span>
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                className="flex items-center gap-2 rounded-lg border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 transition-colors hover:bg-green-100 disabled:opacity-50"
+              >
+                {exporting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="h-4 w-4" />
+                )}
+                {exporting ? "Exportando..." : "Exportar Excel"}
+              </button>
             )}
-          </h2>
+          </div>
 
           {loading ? (
             <div className="flex justify-center py-12">

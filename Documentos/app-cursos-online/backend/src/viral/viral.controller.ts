@@ -6,10 +6,12 @@ import {
   Body,
   Param,
   Query,
+  Res,
   Logger,
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ViralService } from './viral.service';
 import { CurrentUser, Roles } from '../common/decorators';
@@ -173,5 +175,46 @@ export class ViralController {
   @ApiOperation({ summary: 'Historial de búsquedas virales del usuario' })
   async getHistory(@CurrentUser('id') userId: string) {
     return this.viralService.getHistory(userId);
+  }
+
+  @Post('export')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Exportar videos virales seleccionados a Excel (.xlsx)' })
+  async exportToExcel(
+    @Body() body: {
+      videos: {
+        videoId: string;
+        title: string;
+        channelTitle: string;
+        viewCount: number;
+        likeCount: number;
+        commentCount?: number;
+        engagementRate?: number;
+        duration: string;
+        publishedAt: string;
+        category?: string;
+      }[];
+      category?: string;
+    },
+    @Res() res: Response,
+  ) {
+    try {
+      const buffer = await this.viralService.exportToExcel(body.videos, body.category);
+      const date = new Date().toISOString().split('T')[0];
+      const filename = `contenido-viral-${body.category || 'todos'}-${date}.xlsx`;
+
+      res.set({
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': buffer.byteLength,
+      });
+      res.end(buffer);
+    } catch (error) {
+      this.logger.error(`Export failed: ${error.message}`);
+      throw new HttpException(
+        error.message || 'Error al exportar a Excel',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }

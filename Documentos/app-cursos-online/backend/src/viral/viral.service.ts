@@ -1200,6 +1200,103 @@ Extrae los segmentos más valiosos en formato JSON.`;
     };
   }
 
+  /**
+   * Export viral videos to an Excel (.xlsx) buffer.
+   */
+  async exportToExcel(videos: {
+    videoId: string;
+    title: string;
+    channelTitle: string;
+    viewCount: number;
+    likeCount: number;
+    commentCount?: number;
+    engagementRate?: number;
+    duration: string;
+    publishedAt: string;
+    category?: string;
+  }[], category?: string): Promise<Buffer> {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'CourseForge AI';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Contenido Viral');
+
+    // Columns
+    sheet.columns = [
+      { header: 'Titulo', key: 'title', width: 50 },
+      { header: 'Canal', key: 'channel', width: 25 },
+      { header: 'Categoria', key: 'category', width: 18 },
+      { header: 'Vistas', key: 'views', width: 14 },
+      { header: 'Likes', key: 'likes', width: 12 },
+      { header: 'Comentarios', key: 'comments', width: 14 },
+      { header: 'Engagement %', key: 'engagement', width: 14 },
+      { header: 'Duracion', key: 'duration', width: 12 },
+      { header: 'Publicado', key: 'published', width: 14 },
+      { header: 'URL YouTube', key: 'url', width: 45 },
+    ];
+
+    // Header style
+    sheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        bottom: { style: 'thin', color: { argb: 'FF3730A3' } },
+      };
+    });
+    sheet.getRow(1).height = 28;
+
+    // Data rows
+    for (const video of videos) {
+      const categoryLabel = this.getCategoryLabel(video.category || category || '');
+      sheet.addRow({
+        title: video.title,
+        channel: video.channelTitle,
+        category: categoryLabel,
+        views: video.viewCount,
+        likes: video.likeCount,
+        comments: video.commentCount || 0,
+        engagement: video.engagementRate ? `${video.engagementRate.toFixed(1)}%` : '0%',
+        duration: video.duration,
+        published: video.publishedAt ? new Date(video.publishedAt).toLocaleDateString('es-CO') : '',
+        url: `https://www.youtube.com/watch?v=${video.videoId}`,
+      });
+    }
+
+    // Format number columns
+    sheet.getColumn('views').numFmt = '#,##0';
+    sheet.getColumn('likes').numFmt = '#,##0';
+    sheet.getColumn('comments').numFmt = '#,##0';
+
+    // Alternate row colors
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        const fill = rowNumber % 2 === 0
+          ? { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFF5F3FF' } }
+          : undefined;
+        row.eachCell((cell) => {
+          if (fill) cell.fill = fill;
+          cell.border = {
+            bottom: { style: 'thin' as const, color: { argb: 'FFE5E7EB' } },
+          };
+        });
+      }
+    });
+
+    // Auto-filter
+    sheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: videos.length + 1, column: 10 },
+    };
+
+    // Freeze header
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+    const arrayBuffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+
   // ─── Private helpers ──────────────────────────────────────────────
 
   private getCategoryLabel(key: string): string {
