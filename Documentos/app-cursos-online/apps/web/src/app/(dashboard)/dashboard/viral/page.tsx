@@ -282,6 +282,7 @@ export default function ViralPage() {
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(["es"]);
   const [sortBy, setSortBy] = useState("viewCount");
   const [eventType, setEventType] = useState<string | null>(null);
+  const [customKeywords, setCustomKeywords] = useState("");
   const [showAllCategories, setShowAllCategories] = useState(false);
 
   // State
@@ -329,6 +330,9 @@ export default function ViralPage() {
       if (selectedLanguages.length > 0) body.languages = selectedLanguages;
       if (selectedCountries.length > 0) body.countries = selectedCountries;
       if (eventType) body.eventType = eventType;
+      if (customKeywords.trim()) {
+        body.keywords = customKeywords.split(",").map((k) => k.trim()).filter(Boolean);
+      }
 
       const data = await api.post<SearchResult>("/viral/search", body, token);
       setResults(data.videos);
@@ -476,7 +480,49 @@ export default function ViralPage() {
           </div>
         </div>
 
-        {/* Row 2: Countries, Languages, Sort, Live toggle */}
+        {/* Row 2: Keywords */}
+        <div className="mt-4">
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            Palabras clave (separadas por coma)
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={customKeywords}
+              onChange={(e) => setCustomKeywords(e.target.value)}
+              placeholder="ej: mundial 2026, messi, final, goles..."
+              className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+            {customKeywords && (
+              <button
+                type="button"
+                onClick={() => setCustomKeywords("")}
+                className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-500 hover:bg-gray-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          {!customKeywords && (
+            <p className="mt-1 text-[10px] text-gray-400">
+              Si no escribes palabras clave, se usaran las predefinidas de la categoria seleccionada.
+            </p>
+          )}
+          {customKeywords && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {customKeywords.split(",").map((k) => k.trim()).filter(Boolean).map((keyword, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-700"
+                >
+                  {keyword}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Row 3: Countries, Languages, Sort, Live toggle */}
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">
