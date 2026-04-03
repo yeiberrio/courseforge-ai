@@ -72,6 +72,7 @@ export class AgentsService {
   private readonly logger = new Logger(AgentsService.name);
   private readonly anthropicApiKey: string;
   private readonly openaiApiKey: string;
+  private readonly googleApiKey: string;
 
   constructor(
     private configService: ConfigService,
@@ -79,6 +80,7 @@ export class AgentsService {
   ) {
     this.anthropicApiKey = this.configService.get<string>('ANTHROPIC_API_KEY') || '';
     this.openaiApiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
+    this.googleApiKey = this.configService.get<string>('YOUTUBE_API_KEY') || '';
   }
 
   /**
@@ -492,6 +494,153 @@ export class AgentsService {
       this.logger.error(`Email failed to ${to}: ${err.message}`);
       return { sent: false, reason: err.message };
     }
+  }
+
+  // ─── Prospección (Google Places) ──────────────────────────────
+
+  /**
+   * Search for potential clients/businesses using Google Places API.
+   */
+  async searchProspects(options: {
+    query: string;
+    location?: string;
+    radius?: number;
+    minRating?: number;
+    maxResults?: number;
+  }) {
+    if (!this.googleApiKey) {
+      throw new NotFoundException('YOUTUBE_API_KEY (Google API Key) no configurada. Habilita Places API en Google Cloud Console.');
+    }
+
+    const { query, location, radius = 10000, minRating = 0, maxResults = 20 } = options;
+
+    // Build search text: combine niche + location
+    const textQuery = location ? `${query} en ${location}` : query;
+
+    // Use Places API (New) - Text Search
+    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': this.googleApiKey,
+        'X-Goog-FieldMask': [
+          'places.id',
+          'places.displayName',
+          'places.formattedAddress',
+          'places.nationalPhoneNumber',
+          'places.internationalPhoneNumber',
+          'places.websiteUri',
+          'places.googleMapsUri',
+          'places.rating',
+          'places.userRatingCount',
+          'places.businessStatus',
+          'places.regularOpeningHours',
+          'places.types',
+          'places.primaryType',
+          'places.location',
+        ].join(','),
+      },
+      body: JSON.stringify({
+        textQuery,
+        maxResultCount: Math.min(maxResults, 20),
+        languageCode: 'es',
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      this.logger.error(`Google Places API error: ${JSON.stringify(err)}`);
+      throw new Error(err.error?.message || 'Error al buscar en Google Places API');
+    }
+
+    const data = await response.json();
+    const places = data.places || [];
+
+    // Map and filter results
+    const prospects = places
+      .map((place: any) => ({
+        placeId: place.id,
+        name: place.displayName?.text || '',
+        address: place.formattedAddress || '',
+        phone: place.nationalPhoneNumber || place.internationalPhoneNumber || null,
+        website: place.websiteUri || null,
+        googleMapsUrl: place.googleMapsUri || null,
+        rating: place.rating || null,
+        totalReviews: place.userRatingCount || 0,
+        status: place.businessStatus || null,
+        types: place.types || [],
+        primaryType: place.primaryType || null,
+        openNow: place.regularOpeningHours?.openNow ?? null,
+        weekdayHours: place.regularOpeningHours?.weekdayDescriptions || [],
+        latitude: place.location?.latitude || null,
+        longitude: place.location?.longitude || null,
+      }))
+      .filter((p: any) => !minRating || (p.rating && p.rating >= minRating));
+
+    this.logger.log(`Prospects search: "${textQuery}" → ${prospects.length} results`);
+
+    return {
+      query: textQuery,
+      totalResults: prospects.length,
+      prospects,
+    };
+  }
+
+  /**
+   * Import prospects as leads in the CRM.
+   */
+  async importProspects(prospects: {
+    name: string;
+    phone?: string;
+    website?: string;
+    address?: string;
+    interest?: string;
+    googleMapsUrl?: string;
+    rating?: number;
+    totalReviews?: number;
+  }[]) {
+    const created: any[] = [];
+    const skipped: string[] = [];
+
+    for (const p of prospects) {
+      // Skip if lead already exists with same name + phone
+      const existing = await this.prisma.lead.findFirst({
+        where: {
+          name: p.name,
+          ...(p.phone ? { phone: p.phone } : {}),
+        },
+      });
+
+      if (existing) {
+        skipped.push(p.name);
+        continue;
+      }
+
+      const lead = await this.prisma.lead.create({
+        data: {
+          name: p.name,
+          phone: p.phone || null,
+          source: 'google_places',
+          interest: p.interest || null,
+          notes: [
+            p.address ? `Dirección: ${p.address}` : null,
+            p.website ? `Web: ${p.website}` : null,
+            p.googleMapsUrl ? `Maps: ${p.googleMapsUrl}` : null,
+            p.rating ? `Rating: ${p.rating}/5 (${p.totalReviews || 0} reseñas)` : null,
+          ].filter(Boolean).join('\n'),
+        },
+      });
+      created.push(lead);
+    }
+
+    this.logger.log(`Prospects imported: ${created.length} created, ${skipped.length} skipped (duplicates)`);
+
+    return {
+      imported: created.length,
+      skipped: skipped.length,
+      skippedNames: skipped,
+      leads: created,
+    };
   }
 
   // ─── Helpers ─────────────────────────────────────────────────

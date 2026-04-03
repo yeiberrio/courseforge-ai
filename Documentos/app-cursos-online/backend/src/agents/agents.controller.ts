@@ -168,4 +168,41 @@ export class AgentsController {
     }
     return result;
   }
+
+  // ─── Prospección (Google Places) ──────────────────────────────
+
+  @Post('leads/prospect')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Buscar clientes potenciales con Google Places API' })
+  async searchProspects(
+    @Body() body: {
+      query: string;
+      location?: string;
+      radius?: number;
+      minRating?: number;
+      maxResults?: number;
+    },
+  ) {
+    return this.agentsService.searchProspects(body);
+  }
+
+  @Post('leads/prospect/import')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Importar prospectos de Google como leads en el CRM' })
+  async importProspects(
+    @Body() body: {
+      prospects: {
+        name: string;
+        phone?: string;
+        website?: string;
+        address?: string;
+        interest?: string;
+        googleMapsUrl?: string;
+        rating?: number;
+        totalReviews?: number;
+      }[];
+    },
+  ) {
+    return this.agentsService.importProspects(body.prospects);
+  }
 }

@@ -19,6 +19,7 @@ import {
   TrendingUp,
   Brain,
   Bot,
+  Navigation,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -76,6 +77,12 @@ const navItems: NavItem[] = [
     label: "Agente de Ventas",
     href: "/dashboard/agente-ventas",
     icon: <Bot className="h-5 w-5" />,
+    roles: ["CREATOR", "ADMIN"],
+  },
+  {
+    label: "Prospectar Clientes",
+    href: "/dashboard/agente-ventas/prospectar",
+    icon: <Navigation className="h-5 w-5" />,
     roles: ["CREATOR", "ADMIN"],
   },
   {
