@@ -97,6 +97,25 @@ export class ViralController {
     return this.viralService.transcribeVideo(videoId);
   }
 
+  @Post('videos/:id/segments')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Extraer segmentos clave de un video usando IA' })
+  async extractSegments(
+    @Param('id') videoId: string,
+    @Body() body: { transcription?: string },
+  ) {
+    try {
+      return await this.viralService.extractSegments(videoId, body.transcription);
+    } catch (error) {
+      this.logger.error(`Extract segments failed: ${error.message}`);
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        error.message || 'Error al extraer segmentos del video',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
   @Post('process')
   @Roles(UserRole.CREATOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Procesar transcripción con opciones avanzadas (tono, audiencia, objetivo)' })

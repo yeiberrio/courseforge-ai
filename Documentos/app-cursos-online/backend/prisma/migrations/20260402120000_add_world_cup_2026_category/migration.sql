@@ -1,0 +1,2 @@
+-- Add WORLD_CUP_2026 to ViralCategory enum
+ALTER TYPE "ViralCategory" ADD VALUE IF NOT EXISTS 'WORLD_CUP_2026';

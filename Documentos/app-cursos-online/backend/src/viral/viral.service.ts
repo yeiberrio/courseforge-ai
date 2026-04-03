@@ -106,6 +106,14 @@ const VIRAL_KEYWORDS: Record<string, string[]> = {
     'energía renovable', 'reciclaje', 'contaminación', 'naturaleza',
     'animales', 'biodiversidad', 'conservación', 'planeta',
   ],
+  WORLD_CUP_2026: [
+    'mundial 2026', 'world cup 2026', 'FIFA 2026', 'copa del mundo 2026',
+    'mundial fútbol 2026', 'eliminatorias mundial 2026', 'selección nacional mundial',
+    'clasificación mundial 2026', 'sede mundial México USA Canadá',
+    'grupos mundial 2026', 'sorteo mundial 2026', 'estadios mundial 2026',
+    'calendario mundial 2026', 'predicciones mundial 2026', 'favoritos mundial 2026',
+    'goles mundial', 'partidos mundial 2026',
+  ],
 };
 
 const CATEGORY_IDS: Record<string, string[]> = {
@@ -129,6 +137,7 @@ const CATEGORY_IDS: Record<string, string[]> = {
   DIY: ['26', '22'],
   POLITICS: ['25'],
   ENVIRONMENT: ['28', '29'],
+  WORLD_CUP_2026: ['17'],
 };
 
 // Date range mapping: key -> hours back
@@ -1028,6 +1037,169 @@ ${goalInstructions}`;
     ];
   }
 
+  /**
+   * Extract key segments from a video transcription using AI.
+   * Returns timestamps, summaries, relevance types, and direct YouTube links.
+   */
+  async extractSegments(videoId: string, transcription?: string) {
+    if (!this.openaiApiKey && !this.anthropicApiKey) {
+      throw new BadRequestException('Se requiere OPENAI_API_KEY o ANTHROPIC_API_KEY para extracción de segmentos');
+    }
+
+    let video = await this.prisma.viralVideo.findUnique({ where: { id: videoId } });
+    if (!video) {
+      video = await this.prisma.viralVideo.findFirst({
+        where: { youtube_video_id: videoId },
+        orderBy: { created_at: 'desc' },
+      });
+    }
+    if (!video) throw new NotFoundException('Video no encontrado');
+
+    // Use provided transcription or try to get captions
+    let text = transcription;
+    if (!text) {
+      const captions = await this.getYouTubeCaptions(video.youtube_video_id);
+      if (!captions) {
+        throw new BadRequestException('No hay transcripción disponible. Transcribe el video primero.');
+      }
+      text = captions;
+    }
+
+    const systemPrompt = `Eres un experto en análisis de contenido de video y marketing digital.
+Se te proporcionará la transcripción de un video de YouTube.
+
+Tu tarea es identificar los segmentos más valiosos e interesantes del video.
+
+Para cada segmento, debes extraer:
+- start: timestamp de inicio (formato M:SS o H:MM:SS)
+- end: timestamp de fin (formato M:SS o H:MM:SS)
+- start_seconds: inicio en segundos (número entero)
+- title: título descriptivo corto del segmento
+- summary: resumen de 1-2 oraciones de lo que se dice/muestra
+- relevance: tipo de relevancia (uno de: "hook", "dato_clave", "momento_viral", "cta", "storytelling", "controversia", "tutorial", "humor", "emocional", "insight")
+- score: puntuación de 1 a 10 de qué tan valioso/interesante es el segmento
+
+REGLAS:
+- Identifica entre 3 y 12 segmentos según la duración del video
+- Los segmentos NO deben solaparse
+- Ordénalos cronológicamente por timestamp
+- Prioriza momentos que: generen engagement, sean compartibles, tengan valor educativo, o sean virales
+- El video tiene una duración de ${video.duration_seconds} segundos (${this.formatDuration(video.duration_seconds)})
+
+FORMATO DE SALIDA (JSON estricto):
+{
+  "segments": [
+    {
+      "start": "0:00",
+      "end": "0:45",
+      "start_seconds": 0,
+      "title": "Hook inicial impactante",
+      "summary": "El creador abre con una pregunta que genera curiosidad...",
+      "relevance": "hook",
+      "score": 9
+    }
+  ],
+  "total_segments": 5,
+  "video_coverage_percent": 65,
+  "top_moment": "Breve descripción del momento más destacado del video"
+}`;
+
+    const userMessage = `Video: "${video.title}" (${this.formatDuration(video.duration_seconds)})
+Canal: ${video.channel_name}
+Categoría: ${video.category}
+
+Transcripción:
+${text.substring(0, 12000)}
+
+Extrae los segmentos más valiosos en formato JSON.`;
+
+    let content = '';
+
+    if (this.openaiApiKey) {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.openaiApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          max_tokens: 4000,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(`OpenAI API failed: ${err.error?.message || response.statusText}`);
+      }
+
+      const data = await response.json();
+      content = data.choices?.[0]?.message?.content || '';
+    } else {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': this.anthropicApiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          system: systemPrompt,
+          messages: [
+            { role: 'user', content: userMessage },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(`Claude API failed: ${err.error?.message || response.statusText}`);
+      }
+
+      const data = await response.json();
+      content = data.content?.[0]?.text || '';
+    }
+
+    // Parse JSON response
+    let result: any;
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    } catch {
+      result = null;
+    }
+
+    if (!result?.segments) {
+      throw new Error('No se pudieron extraer segmentos del video');
+    }
+
+    // Add YouTube links to each segment
+    const youtubeVideoId = video.youtube_video_id;
+    result.segments = result.segments.map((seg: any) => ({
+      ...seg,
+      youtube_url: `https://youtu.be/${youtubeVideoId}?t=${seg.start_seconds}`,
+      youtube_embed_url: `https://www.youtube.com/embed/${youtubeVideoId}?start=${seg.start_seconds}`,
+    }));
+
+    return {
+      video: {
+        id: video.id,
+        youtubeVideoId,
+        title: video.title,
+        channelName: video.channel_name,
+        duration: this.formatDuration(video.duration_seconds),
+        durationSeconds: video.duration_seconds,
+      },
+      ...result,
+    };
+  }
+
   // ─── Private helpers ──────────────────────────────────────────────
 
   private getCategoryLabel(key: string): string {
@@ -1052,6 +1224,7 @@ ${goalInstructions}`;
       DIY: 'Hazlo tú mismo',
       POLITICS: 'Política',
       ENVIRONMENT: 'Medio Ambiente',
+      WORLD_CUP_2026: 'Mundial 2026',
     };
     return labels[key] || key;
   }

@@ -47,7 +47,8 @@ type Category =
   | "RELIGIOUS" | "EDUCATIONAL" | "NEWS" | "TECHNOLOGY" | "HEALTH"
   | "BUSINESS" | "ENTERTAINMENT" | "SCIENCE" | "SPORTS" | "COOKING"
   | "MUSIC" | "TRAVEL" | "FINANCE" | "MOTIVATION" | "COMEDY"
-  | "GAMING" | "FASHION" | "DIY" | "POLITICS" | "ENVIRONMENT";
+  | "GAMING" | "FASHION" | "DIY" | "POLITICS" | "ENVIRONMENT"
+  | "WORLD_CUP_2026";
 
 type DateRange =
   | "12h" | "24h" | "2d" | "3d" | "4d" | "7d" | "15d"
@@ -105,6 +106,7 @@ const categories: { key: Category; label: string; icon: typeof Church }[] = [
   { key: "DIY", label: "Hazlo tu mismo", icon: Hammer },
   { key: "POLITICS", label: "Politica", icon: Landmark },
   { key: "ENVIRONMENT", label: "Medio Ambiente", icon: Leaf },
+  { key: "WORLD_CUP_2026", label: "Mundial 2026", icon: Globe },
 ];
 
 const countryOptions = [

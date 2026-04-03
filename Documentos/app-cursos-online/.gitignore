@@ -39,3 +39,4 @@ apps/web/ios/
 
 # prisma (migrations must be tracked for deployment)
 # backend/prisma/migrations/
+.vercel

@@ -32,6 +32,11 @@ import {
   Download,
   Database,
   Send,
+  Scissors,
+  ExternalLink,
+  Star,
+  Copy,
+  Check,
 } from "lucide-react";
 
 type ContentLength = "EXTENSIVE" | "MEDIUM" | "REDUCED" | "MICRO";
@@ -60,6 +65,33 @@ interface GeneratedModule {
   content?: string;
   reflection_questions?: string[];
   visual_suggestions?: string[];
+}
+
+interface VideoSegment {
+  start: string;
+  end: string;
+  start_seconds: number;
+  title: string;
+  summary: string;
+  relevance: string;
+  score: number;
+  youtube_url: string;
+  youtube_embed_url: string;
+}
+
+interface SegmentsResult {
+  video: {
+    id: string;
+    youtubeVideoId: string;
+    title: string;
+    channelName: string;
+    duration: string;
+    durationSeconds: number;
+  };
+  segments: VideoSegment[];
+  total_segments: number;
+  video_coverage_percent: number;
+  top_moment: string;
 }
 
 interface ProcessedDocument {
@@ -184,6 +216,11 @@ export default function ProcesarViralPage() {
   const [contentGoal, setContentGoal] = useState<ContentGoal>("COURSE");
   const [autoPublishYoutube, setAutoPublishYoutube] = useState(false);
 
+  // Segments extraction
+  const [extractingSegments, setExtractingSegments] = useState(false);
+  const [segments, setSegments] = useState<SegmentsResult | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+
   // Step 3: Processing
   const [processing, setProcessing] = useState(false);
   const [document, setDocument] = useState<ProcessedDocument | null>(null);
@@ -227,6 +264,32 @@ export default function ProcesarViralPage() {
     } finally {
       setTranscribing(false);
     }
+  };
+
+  const handleExtractSegments = async () => {
+    if (!token || !video) return;
+    setError("");
+    setExtractingSegments(true);
+
+    try {
+      const result = await api.post<SegmentsResult>(
+        `/viral/videos/${video.id}/segments`,
+        { transcription: transcription || undefined },
+        token,
+      );
+      setSegments(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Error al extraer segmentos";
+      setError(message);
+    } finally {
+      setExtractingSegments(false);
+    }
+  };
+
+  const handleCopyUrl = (url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopiedUrl(url);
+    setTimeout(() => setCopiedUrl(null), 2000);
   };
 
   const handleProcess = async () => {
@@ -442,28 +505,156 @@ export default function ProcesarViralPage() {
             </div>
           </div>
 
-          {/* Transcribe action */}
-          <div className="rounded-xl border bg-white p-8 text-center shadow-sm">
-            <FileText className="mx-auto mb-4 h-12 w-12 text-gray-300" />
-            <h2 className="text-lg font-semibold text-gray-900">Transcribir video</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Extraeremos los subtítulos del video y los convertiremos en texto. Podrás editar el resultado antes de procesarlo.
-            </p>
-            <button
-              onClick={handleTranscribe}
-              disabled={transcribing}
-              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-600 px-6 py-3 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-            >
-              {transcribing ? (
-                <><Loader2 className="h-4 w-4 animate-spin" />Transcribiendo...</>
-              ) : (
-                <><Sparkles className="h-4 w-4" />Iniciar transcripción</>
+          {/* Action cards: Transcribe + Extract segments */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Transcribe action */}
+            <div className="rounded-xl border bg-white p-6 shadow-sm text-center">
+              <FileText className="mx-auto mb-3 h-10 w-10 text-brand-300" />
+              <h2 className="text-base font-semibold text-gray-900">Transcribir video</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                Extrae los subtítulos del video y conviértelos en texto editable. Luego podrás procesarlo con IA para generar cursos o guiones virales.
+              </p>
+              <button
+                onClick={handleTranscribe}
+                disabled={transcribing || extractingSegments}
+                className="mt-5 inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                {transcribing ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Transcribiendo...</>
+                ) : (
+                  <><Sparkles className="h-4 w-4" />Iniciar transcripción</>
+                )}
+              </button>
+              {transcribing && (
+                <p className="mt-3 text-xs text-gray-400">Procesando subtítulos. No cierres esta página.</p>
               )}
-            </button>
-            {transcribing && (
-              <p className="mt-4 text-xs text-gray-400">Procesando subtítulos. No cierres esta página.</p>
-            )}
+            </div>
+
+            {/* Extract segments action */}
+            <div className="rounded-xl border bg-white p-6 shadow-sm text-center">
+              <Scissors className="mx-auto mb-3 h-10 w-10 text-purple-300" />
+              <h2 className="text-base font-semibold text-gray-900">Extraer segmentos clave</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                La IA analiza el video e identifica los momentos más valiosos con timestamps y enlaces directos a YouTube.
+              </p>
+              <button
+                onClick={handleExtractSegments}
+                disabled={extractingSegments || transcribing}
+                className="mt-5 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+              >
+                {extractingSegments ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Extrayendo...</>
+                ) : (
+                  <><Scissors className="h-4 w-4" />Extraer segmentos</>
+                )}
+              </button>
+              {extractingSegments && (
+                <p className="mt-3 text-xs text-gray-400">Analizando video con IA. No cierres esta página.</p>
+              )}
+            </div>
           </div>
+
+          {/* Segments results (shown inline in step 1) */}
+          {segments && (
+            <div className="rounded-xl border bg-white p-6 shadow-sm">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                  <Scissors className="h-5 w-5 text-purple-600" />
+                  Segmentos extraídos
+                </h3>
+                <button
+                  onClick={handleExtractSegments}
+                  disabled={extractingSegments}
+                  className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3 w-3 ${extractingSegments ? "animate-spin" : ""}`} />
+                  Reanalizar
+                </button>
+              </div>
+
+              {/* Summary bar */}
+              <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-purple-50 p-3">
+                <span className="text-xs font-medium text-purple-700">
+                  {segments.total_segments} segmentos encontrados
+                </span>
+                <span className="text-xs text-purple-600">
+                  Cobertura: {segments.video_coverage_percent}% del video
+                </span>
+                {segments.top_moment && (
+                  <span className="text-xs text-purple-600 italic">
+                    Mejor momento: {segments.top_moment}
+                  </span>
+                )}
+              </div>
+
+              {/* Segments list */}
+              <div className="space-y-2">
+                {segments.segments.map((seg, i) => (
+                  <div
+                    key={i}
+                    className="group flex items-start gap-3 rounded-lg border border-gray-100 bg-gray-50 p-4 transition-colors hover:border-purple-200 hover:bg-purple-50/50"
+                  >
+                    {/* Score badge */}
+                    <div className="flex shrink-0 flex-col items-center gap-1">
+                      <div className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white ${
+                        seg.score >= 8 ? "bg-green-500" : seg.score >= 5 ? "bg-yellow-500" : "bg-gray-400"
+                      }`}>
+                        {seg.score}
+                      </div>
+                      <Star className={`h-3 w-3 ${seg.score >= 8 ? "text-yellow-400" : "text-gray-300"}`} />
+                    </div>
+
+                    {/* Content */}
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-gray-900">{seg.title}</span>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          seg.relevance === "hook" ? "bg-red-100 text-red-700" :
+                          seg.relevance === "dato_clave" ? "bg-blue-100 text-blue-700" :
+                          seg.relevance === "momento_viral" ? "bg-orange-100 text-orange-700" :
+                          seg.relevance === "cta" ? "bg-green-100 text-green-700" :
+                          seg.relevance === "storytelling" ? "bg-purple-100 text-purple-700" :
+                          seg.relevance === "controversia" ? "bg-yellow-100 text-yellow-700" :
+                          seg.relevance === "tutorial" ? "bg-cyan-100 text-cyan-700" :
+                          seg.relevance === "humor" ? "bg-pink-100 text-pink-700" :
+                          seg.relevance === "emocional" ? "bg-rose-100 text-rose-700" :
+                          seg.relevance === "insight" ? "bg-indigo-100 text-indigo-700" :
+                          "bg-gray-100 text-gray-700"
+                        }`}>
+                          {seg.relevance}
+                        </span>
+                      </div>
+                      <p className="mb-2 text-xs leading-relaxed text-gray-600">{seg.summary}</p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="rounded bg-gray-200 px-2 py-0.5 text-xs font-mono text-gray-700">
+                          {seg.start} → {seg.end}
+                        </span>
+                        <a
+                          href={seg.youtube_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-800 hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Ver en YouTube
+                        </a>
+                        <button
+                          onClick={() => handleCopyUrl(seg.youtube_url)}
+                          className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
+                        >
+                          {copiedUrl === seg.youtube_url ? (
+                            <><Check className="h-3 w-3 text-green-500" /><span className="text-green-500">Copiado</span></>
+                          ) : (
+                            <><Copy className="h-3 w-3" />Copiar enlace</>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
