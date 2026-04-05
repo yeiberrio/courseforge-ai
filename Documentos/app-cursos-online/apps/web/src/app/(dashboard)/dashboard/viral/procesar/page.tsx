@@ -85,9 +85,12 @@ interface SegmentsResult {
     youtubeVideoId: string;
     title: string;
     channelName: string;
+    category: string;
+    thumbnailUrl: string;
     duration: string;
     durationSeconds: number;
   };
+  transcriptionSource: string;
   segments: VideoSegment[];
   total_segments: number;
   video_coverage_percent: number;
@@ -218,6 +221,7 @@ export default function ProcesarViralPage() {
 
   // Segments extraction
   const [extractingSegments, setExtractingSegments] = useState(false);
+  const [segmentsPhase, setSegmentsPhase] = useState<"idle" | "transcribing" | "analyzing">("idle");
   const [segments, setSegments] = useState<SegmentsResult | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
@@ -270,17 +274,22 @@ export default function ProcesarViralPage() {
     if (!token || !video) return;
     setError("");
     setExtractingSegments(true);
+    setSegmentsPhase("transcribing");
 
     try {
+      // The backend auto-transcribes if no transcription is provided
+      setSegmentsPhase("analyzing");
       const result = await api.post<SegmentsResult>(
         `/viral/videos/${video.id}/segments`,
         { transcription: transcription || undefined },
         token,
       );
       setSegments(result);
+      setSegmentsPhase("idle");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error al extraer segmentos";
       setError(message);
+      setSegmentsPhase("idle");
     } finally {
       setExtractingSegments(false);
     }
@@ -535,7 +544,7 @@ export default function ProcesarViralPage() {
               <Scissors className="mx-auto mb-3 h-10 w-10 text-purple-300" />
               <h2 className="text-base font-semibold text-gray-900">Extraer segmentos clave</h2>
               <p className="mt-1 text-xs text-gray-500">
-                La IA analiza el video e identifica los momentos más valiosos con timestamps y enlaces directos a YouTube.
+                Transcribe automáticamente y extrae los momentos más valiosos con timestamps y enlaces directos a YouTube.
               </p>
               <button
                 onClick={handleExtractSegments}
@@ -543,115 +552,166 @@ export default function ProcesarViralPage() {
                 className="mt-5 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
               >
                 {extractingSegments ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" />Extrayendo...</>
+                  <><Loader2 className="h-4 w-4 animate-spin" />{segmentsPhase === "transcribing" ? "Transcribiendo..." : "Analizando con IA..."}</>
                 ) : (
                   <><Scissors className="h-4 w-4" />Extraer segmentos</>
                 )}
               </button>
               {extractingSegments && (
-                <p className="mt-3 text-xs text-gray-400">Analizando video con IA. No cierres esta página.</p>
+                <div className="mt-3 space-y-2">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <div className={`h-2 w-2 rounded-full ${segmentsPhase === "transcribing" ? "bg-purple-500 animate-pulse" : "bg-green-500"}`} />
+                      <span className={`text-xs ${segmentsPhase === "transcribing" ? "text-purple-600 font-medium" : "text-green-600"}`}>
+                        {segmentsPhase === "transcribing" ? "Transcribiendo..." : "Transcrito"}
+                      </span>
+                    </div>
+                    <span className="text-gray-300">→</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className={`h-2 w-2 rounded-full ${segmentsPhase === "analyzing" ? "bg-purple-500 animate-pulse" : "bg-gray-300"}`} />
+                      <span className={`text-xs ${segmentsPhase === "analyzing" ? "text-purple-600 font-medium" : "text-gray-400"}`}>
+                        Extrayendo segmentos
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400">No cierres esta página.</p>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Segments results (shown inline in step 1) */}
+          {/* Segments results - large card */}
           {segments && (
-            <div className="rounded-xl border bg-white p-6 shadow-sm">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
-                  <Scissors className="h-5 w-5 text-purple-600" />
-                  Segmentos extraídos
-                </h3>
-                <button
-                  onClick={handleExtractSegments}
-                  disabled={extractingSegments}
-                  className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
-                >
-                  <RefreshCw className={`h-3 w-3 ${extractingSegments ? "animate-spin" : ""}`} />
-                  Reanalizar
-                </button>
-              </div>
-
-              {/* Summary bar */}
-              <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-purple-50 p-3">
-                <span className="text-xs font-medium text-purple-700">
-                  {segments.total_segments} segmentos encontrados
-                </span>
-                <span className="text-xs text-purple-600">
-                  Cobertura: {segments.video_coverage_percent}% del video
-                </span>
+            <div className="rounded-2xl border-2 border-purple-200 bg-white shadow-lg overflow-hidden">
+              {/* Header with video info */}
+              <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white">
+                <div className="flex items-start gap-4">
+                  {segments.video.thumbnailUrl && (
+                    <img
+                      src={segments.video.thumbnailUrl}
+                      alt={segments.video.title}
+                      className="h-20 w-36 shrink-0 rounded-lg object-cover shadow-lg"
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-lg font-bold leading-tight">{segments.video.title}</h3>
+                    <p className="mt-1 text-sm text-purple-200">{segments.video.channelName}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-3">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium">
+                        <Clock className="h-3 w-3" />{segments.video.duration}
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium">
+                        <Scissors className="h-3 w-3" />{segments.total_segments} segmentos
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium">
+                        {segments.video_coverage_percent}% cobertura
+                      </span>
+                      {segments.transcriptionSource && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium">
+                          {segments.transcriptionSource === "captions" ? "Subtítulos reales" : segments.transcriptionSource === "metadata" ? "Basado en metadatos" : "Transcripción manual"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleExtractSegments}
+                    disabled={extractingSegments}
+                    className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/30 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${extractingSegments ? "animate-spin" : ""}`} />
+                    Reanalizar
+                  </button>
+                </div>
                 {segments.top_moment && (
-                  <span className="text-xs text-purple-600 italic">
-                    Mejor momento: {segments.top_moment}
-                  </span>
+                  <div className="mt-3 rounded-lg bg-white/10 px-3 py-2">
+                    <span className="text-xs font-medium text-purple-200">Mejor momento:</span>
+                    <span className="ml-1 text-sm text-white">{segments.top_moment}</span>
+                  </div>
                 )}
               </div>
 
               {/* Segments list */}
-              <div className="space-y-2">
-                {segments.segments.map((seg, i) => (
-                  <div
-                    key={i}
-                    className="group flex items-start gap-3 rounded-lg border border-gray-100 bg-gray-50 p-4 transition-colors hover:border-purple-200 hover:bg-purple-50/50"
-                  >
-                    {/* Score badge */}
-                    <div className="flex shrink-0 flex-col items-center gap-1">
-                      <div className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white ${
-                        seg.score >= 8 ? "bg-green-500" : seg.score >= 5 ? "bg-yellow-500" : "bg-gray-400"
-                      }`}>
-                        {seg.score}
-                      </div>
-                      <Star className={`h-3 w-3 ${seg.score >= 8 ? "text-yellow-400" : "text-gray-300"}`} />
-                    </div>
+              <div className="divide-y divide-gray-100">
+                {segments.segments.map((seg, i) => {
+                  const relevanceConfig: Record<string, { bg: string; text: string; label: string }> = {
+                    gol: { bg: "bg-green-100", text: "text-green-800", label: "GOL" },
+                    jugada_clave: { bg: "bg-amber-100", text: "text-amber-800", label: "Jugada clave" },
+                    tarjeta: { bg: "bg-red-100", text: "text-red-800", label: "Tarjeta" },
+                    penal: { bg: "bg-orange-100", text: "text-orange-800", label: "Penal" },
+                    celebracion: { bg: "bg-yellow-100", text: "text-yellow-800", label: "Celebracion" },
+                    hook: { bg: "bg-red-100", text: "text-red-700", label: "Hook" },
+                    dato_clave: { bg: "bg-blue-100", text: "text-blue-700", label: "Dato clave" },
+                    momento_viral: { bg: "bg-orange-100", text: "text-orange-700", label: "Viral" },
+                    cta: { bg: "bg-green-100", text: "text-green-700", label: "CTA" },
+                    storytelling: { bg: "bg-purple-100", text: "text-purple-700", label: "Storytelling" },
+                    controversia: { bg: "bg-yellow-100", text: "text-yellow-700", label: "Controversia" },
+                    tutorial: { bg: "bg-cyan-100", text: "text-cyan-700", label: "Tutorial" },
+                    humor: { bg: "bg-pink-100", text: "text-pink-700", label: "Humor" },
+                    emocional: { bg: "bg-rose-100", text: "text-rose-700", label: "Emocional" },
+                    insight: { bg: "bg-indigo-100", text: "text-indigo-700", label: "Insight" },
+                  };
+                  const rc = relevanceConfig[seg.relevance] || { bg: "bg-gray-100", text: "text-gray-700", label: seg.relevance };
+                  const isHighScore = seg.score >= 8;
 
-                    {/* Content */}
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-gray-900">{seg.title}</span>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          seg.relevance === "hook" ? "bg-red-100 text-red-700" :
-                          seg.relevance === "dato_clave" ? "bg-blue-100 text-blue-700" :
-                          seg.relevance === "momento_viral" ? "bg-orange-100 text-orange-700" :
-                          seg.relevance === "cta" ? "bg-green-100 text-green-700" :
-                          seg.relevance === "storytelling" ? "bg-purple-100 text-purple-700" :
-                          seg.relevance === "controversia" ? "bg-yellow-100 text-yellow-700" :
-                          seg.relevance === "tutorial" ? "bg-cyan-100 text-cyan-700" :
-                          seg.relevance === "humor" ? "bg-pink-100 text-pink-700" :
-                          seg.relevance === "emocional" ? "bg-rose-100 text-rose-700" :
-                          seg.relevance === "insight" ? "bg-indigo-100 text-indigo-700" :
-                          "bg-gray-100 text-gray-700"
+                  return (
+                    <div
+                      key={i}
+                      className={`flex items-start gap-4 p-5 transition-colors hover:bg-purple-50/50 ${isHighScore ? "bg-purple-50/30" : ""}`}
+                    >
+                      {/* Number + Score */}
+                      <div className="flex shrink-0 flex-col items-center gap-1.5">
+                        <span className="text-xs font-medium text-gray-400">#{i + 1}</span>
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm ${
+                          seg.score >= 9 ? "bg-gradient-to-br from-green-500 to-emerald-600" :
+                          seg.score >= 7 ? "bg-gradient-to-br from-yellow-500 to-amber-600" :
+                          seg.score >= 5 ? "bg-gradient-to-br from-orange-400 to-orange-500" :
+                          "bg-gray-400"
                         }`}>
-                          {seg.relevance}
-                        </span>
+                          {seg.score}
+                        </div>
+                        {isHighScore && <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400" />}
                       </div>
-                      <p className="mb-2 text-xs leading-relaxed text-gray-600">{seg.summary}</p>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="rounded bg-gray-200 px-2 py-0.5 text-xs font-mono text-gray-700">
-                          {seg.start} → {seg.end}
-                        </span>
-                        <a
-                          href={seg.youtube_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-800 hover:underline"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          Ver en YouTube
-                        </a>
-                        <button
-                          onClick={() => handleCopyUrl(seg.youtube_url)}
-                          className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
-                        >
-                          {copiedUrl === seg.youtube_url ? (
-                            <><Check className="h-3 w-3 text-green-500" /><span className="text-green-500">Copiado</span></>
-                          ) : (
-                            <><Copy className="h-3 w-3" />Copiar enlace</>
-                          )}
-                        </button>
+
+                      {/* Content */}
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-bold text-gray-900">{seg.title}</span>
+                          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${rc.bg} ${rc.text}`}>
+                            {rc.label}
+                          </span>
+                        </div>
+                        <p className="mb-3 text-sm leading-relaxed text-gray-600">{seg.summary}</p>
+
+                        {/* Actions row */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-mono font-medium text-gray-700">
+                            <Timer className="h-3 w-3" />
+                            {seg.start} → {seg.end}
+                          </span>
+                          <a
+                            href={seg.youtube_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-100 transition-colors"
+                          >
+                            <Youtube className="h-3.5 w-3.5" />
+                            Ver en YouTube
+                          </a>
+                          <button
+                            onClick={() => handleCopyUrl(seg.youtube_url)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-gray-50 px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                          >
+                            {copiedUrl === seg.youtube_url ? (
+                              <><Check className="h-3 w-3 text-green-500" /><span className="text-green-600">Copiado</span></>
+                            ) : (
+                              <><Copy className="h-3 w-3" />Copiar</>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

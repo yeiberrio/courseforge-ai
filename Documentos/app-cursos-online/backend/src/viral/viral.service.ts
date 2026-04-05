@@ -1070,48 +1070,65 @@ ${goalInstructions}`;
     }
     if (!video) throw new NotFoundException('Video no encontrado');
 
-    // Use provided transcription or try to get captions
+    // Use provided transcription or auto-transcribe
     let text = transcription;
+    let transcriptionSource = 'provided';
     if (!text) {
+      this.logger.log(`[Segments] No transcription provided for ${video.youtube_video_id}, auto-transcribing...`);
       const captions = await this.getYouTubeCaptions(video.youtube_video_id);
-      if (!captions) {
-        throw new BadRequestException(
-          'No hay transcripción disponible para extraer segmentos. Este video no tiene subtítulos. ' +
-          'Puedes transcribir el video primero para procesar su contenido con IA.',
-        );
+      if (captions) {
+        text = captions;
+        transcriptionSource = 'captions';
+        // Update transcription status since we fetched it
+        await this.prisma.viralVideo.update({
+          where: { id: video.id },
+          data: { transcription_status: 'DONE' },
+        });
+      } else {
+        // Fallback: use metadata-based context
+        text = [
+          `[Título]: ${video.title}`,
+          `[Canal]: ${video.channel_name}`,
+          `[Categoría]: ${video.category}`,
+          video.duration_seconds ? `[Duración]: ${this.formatDuration(video.duration_seconds)}` : '',
+        ].filter(Boolean).join('\n');
+        transcriptionSource = 'metadata';
+        this.logger.warn(`[Segments] No captions for ${video.youtube_video_id}, using metadata`);
       }
-      text = captions;
     }
 
+    // Build context-aware prompt based on video category
+    const categoryHints = this.getSegmentHintsForCategory(video.category || '', video.title || '');
+
     const systemPrompt = `Eres un experto en análisis de contenido de video y marketing digital.
-Se te proporcionará la transcripción REAL con timestamps de un video de YouTube.
+Se te proporcionará la transcripción de un video de YouTube.
 
 Tu tarea es identificar los segmentos más valiosos e interesantes del video.
 
-IMPORTANTE - REGLAS DE TIMESTAMPS:
+${transcriptionSource === 'captions' ? `IMPORTANTE - REGLAS DE TIMESTAMPS:
 - La transcripción tiene formato "[M:SS] texto..." con timestamps REALES del video
 - DEBES usar ÚNICAMENTE los timestamps que aparecen en la transcripción
 - NO inventes ni estimes timestamps. Cada segmento DEBE corresponder a un timestamp exacto de la transcripción
 - Lee el texto en cada timestamp para entender QUÉ está pasando en ese momento exacto
-- El título y resumen del segmento DEBEN describir lo que REALMENTE se dice/muestra en esos timestamps
-- NO asumas el contenido basándote en el título del video - usa SOLO lo que dice la transcripción
+- El título y resumen del segmento DEBEN describir lo que REALMENTE se dice/muestra en esos timestamps` : `NOTA: No hay subtítulos disponibles. Analiza el título, canal y metadatos del video para estimar los segmentos más relevantes basándote en la estructura típica de este tipo de contenido. Estima timestamps distribuidos a lo largo de la duración del video (${this.formatDuration(video.duration_seconds)}).`}
+
+${categoryHints}
 
 Para cada segmento, debes extraer:
-- start: timestamp de inicio EXACTO tomado de la transcripción (formato M:SS o H:MM:SS)
-- end: timestamp de fin tomado de la transcripción (formato M:SS o H:MM:SS)
-- start_seconds: inicio en segundos (número entero, calculado del timestamp)
-- title: título descriptivo corto del segmento basado en lo que REALMENTE se dice
-- summary: resumen de 1-2 oraciones de lo que REALMENTE se dice en la transcripción en ese rango de tiempo
-- relevance: tipo de relevancia (uno de: "hook", "dato_clave", "momento_viral", "cta", "storytelling", "controversia", "tutorial", "humor", "emocional", "insight")
+- start: timestamp de inicio (formato M:SS o H:MM:SS)
+- end: timestamp de fin (formato M:SS o H:MM:SS)
+- start_seconds: inicio en segundos (número entero)
+- title: título descriptivo corto del segmento
+- summary: resumen de 1-2 oraciones del contenido en ese rango de tiempo
+- relevance: tipo de relevancia (uno de: "gol", "jugada_clave", "tarjeta", "penal", "celebracion", "hook", "dato_clave", "momento_viral", "cta", "storytelling", "controversia", "tutorial", "humor", "emocional", "insight")
 - score: puntuación de 1 a 10 de qué tan valioso/interesante es el segmento
 
 REGLAS:
 - Identifica entre 3 y 12 segmentos según la duración del video
 - Los segmentos NO deben solaparse
 - Ordénalos cronológicamente por timestamp
-- Prioriza momentos que: generen engagement, sean compartibles, tengan valor educativo, o sean virales
+- ${categoryHints ? 'Prioriza los eventos indicados arriba según el tipo de contenido' : 'Prioriza momentos que: generen engagement, sean compartibles, tengan valor educativo, o sean virales'}
 - El video tiene una duración de ${video.duration_seconds} segundos (${this.formatDuration(video.duration_seconds)})
-- VERIFICA que cada título y resumen corresponda al contenido REAL de la transcripción en esos timestamps
 
 FORMATO DE SALIDA (JSON estricto):
 {
@@ -1120,8 +1137,8 @@ FORMATO DE SALIDA (JSON estricto):
       "start": "0:00",
       "end": "0:45",
       "start_seconds": 0,
-      "title": "Título basado en lo que realmente se dice",
-      "summary": "Resumen fiel al contenido real de la transcripción en este rango...",
+      "title": "Título descriptivo del momento",
+      "summary": "Resumen del contenido en este rango...",
       "relevance": "hook",
       "score": 9
     }
@@ -1221,11 +1238,49 @@ Extrae los segmentos más valiosos en formato JSON.`;
         youtubeVideoId,
         title: video.title,
         channelName: video.channel_name,
+        category: video.category,
+        thumbnailUrl: video.thumbnail_url,
         duration: this.formatDuration(video.duration_seconds),
         durationSeconds: video.duration_seconds,
       },
+      transcriptionSource,
       ...result,
     };
+  }
+
+  private getSegmentHintsForCategory(category: string, title: string): string {
+    const titleLower = title.toLowerCase();
+    const isSports = category === 'SPORTS' ||
+      /futbol|fútbol|gol|partido|liga|champions|mundial|copa|resumen|highlights|match/i.test(titleLower);
+
+    if (isSports) {
+      return `CONTEXTO: Este es un video DEPORTIVO (posiblemente fútbol/soccer).
+PRIORIZA estos eventos en orden de importancia:
+1. GOLES (relevance: "gol") - El evento más importante. Identifica TODOS los goles mencionados.
+2. JUGADAS CLAVE (relevance: "jugada_clave") - Penales fallados, atajadas increíbles, postes, jugadas de peligro
+3. TARJETAS ROJAS/AMARILLAS (relevance: "tarjeta") - Expulsiones, faltas duras
+4. PENALES (relevance: "penal") - Penales cobrados, VAR
+5. CELEBRACIONES (relevance: "celebracion") - Celebraciones icónicas, reacciones
+6. MOMENTOS VIRALES (relevance: "momento_viral") - Jugadas espectaculares, fails, momentos polémicos
+Cada gol DEBE ser un segmento separado con score >= 9.`;
+    }
+
+    if (category === 'EDUCATIONAL' || /curso|tutorial|clase|aprende/i.test(titleLower)) {
+      return `CONTEXTO: Este es un video EDUCATIVO.
+PRIORIZA: conceptos clave, ejemplos prácticos, momentos "aha", tips accionables, y conclusiones.`;
+    }
+
+    if (category === 'TECHNOLOGY' || /ia|ai|programación|software|tech/i.test(titleLower)) {
+      return `CONTEXTO: Este es un video de TECNOLOGÍA.
+PRIORIZA: demos, revelaciones de producto, datos impactantes, comparativas, y predicciones.`;
+    }
+
+    if (category === 'NEWS' || /noticias|última hora|análisis/i.test(titleLower)) {
+      return `CONTEXTO: Este es un video de NOTICIAS/ANÁLISIS.
+PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis únicos, y conclusiones.`;
+    }
+
+    return '';
   }
 
   /**
