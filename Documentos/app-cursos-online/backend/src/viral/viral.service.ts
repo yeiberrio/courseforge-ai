@@ -515,22 +515,31 @@ export class ViralService {
     try {
       const transcription = await this.getYouTubeCaptions(video.youtube_video_id);
 
-      if (!transcription) {
+      if (transcription) {
         await this.prisma.viralVideo.update({
           where: { id: dbId },
-          data: { transcription_status: 'FAILED' },
+          data: { transcription_status: 'DONE' },
         });
-        throw new BadRequestException(
-          'No se pudieron obtener subtítulos para este video. El video puede no tener subtítulos disponibles.',
-        );
+        return { transcription, source: 'captions' };
       }
+
+      // Fallback: use video metadata so the user can still process the video
+      this.logger.warn(`[Transcribe] No captions available for ${video.youtube_video_id}, using metadata fallback`);
+      const metadataTranscription = [
+        `[Título]: ${video.title}`,
+        `[Canal]: ${video.channel_name}`,
+        `[Categoría]: ${video.category}`,
+        video.duration_seconds ? `[Duración]: ${this.formatDuration(video.duration_seconds)}` : '',
+        video.view_count ? `[Vistas]: ${video.view_count.toLocaleString()}` : '',
+        `\nNota: No se pudieron obtener subtítulos automáticos para este video. El contenido será generado basándose en los metadatos disponibles.`,
+      ].filter(Boolean).join('\n');
 
       await this.prisma.viralVideo.update({
         where: { id: dbId },
         data: { transcription_status: 'DONE' },
       });
 
-      return { transcription, source: 'captions' };
+      return { transcription: metadataTranscription, source: 'metadata' };
     } catch (error) {
       await this.prisma.viralVideo.update({
         where: { id: dbId },
@@ -1066,7 +1075,10 @@ ${goalInstructions}`;
     if (!text) {
       const captions = await this.getYouTubeCaptions(video.youtube_video_id);
       if (!captions) {
-        throw new BadRequestException('No hay transcripción disponible. Transcribe el video primero.');
+        throw new BadRequestException(
+          'No hay transcripción disponible para extraer segmentos. Este video no tiene subtítulos. ' +
+          'Puedes transcribir el video primero para procesar su contenido con IA.',
+        );
       }
       text = captions;
     }
