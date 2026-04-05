@@ -1298,7 +1298,6 @@ PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis único
       throw new BadRequestException('Selecciona al menos un segmento para unir');
     }
 
-    const ytdl = (await import('@distube/ytdl-core')).default;
     const workDir = join(process.cwd(), 'uploads', 'generated', `merge_${Date.now()}`);
     mkdirSync(workDir, { recursive: true });
 
@@ -1307,29 +1306,21 @@ PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis único
     const concatFile = join(workDir, 'concat.txt');
 
     try {
-      // Step 1: Download full video
-      this.logger.log(`[Merge] Downloading video ${youtubeVideoId}...`);
+      // Step 1: Download full video using yt-dlp CLI
+      this.logger.log(`[Merge] Downloading video ${youtubeVideoId} via yt-dlp...`);
       const url = `https://www.youtube.com/watch?v=${youtubeVideoId}`;
 
-      const info = await ytdl.getInfo(url);
-      // Pick best format with both video+audio, prefer 720p
-      const format = ytdl.chooseFormat(info.formats, { quality: '18' }) // 360p mp4 (fast)
-        || ytdl.chooseFormat(info.formats, { filter: 'audioandvideo', quality: 'lowest' });
+      execSync(
+        `yt-dlp -f "best[height<=720][ext=mp4]/best[ext=mp4]/best" --no-playlist -o "${sourceFile}" "${url}"`,
+        { timeout: 180000 },
+      );
 
-      if (!format) {
-        throw new BadRequestException('No se encontró un formato de video descargable');
+      if (!existsSync(sourceFile)) {
+        throw new BadRequestException('No se pudo descargar el video de YouTube');
       }
 
-      const videoStream = ytdl.downloadFromInfo(info, { format });
-      const fileStream = createWriteStream(sourceFile);
-      await new Promise<void>((resolve, reject) => {
-        videoStream.pipe(fileStream);
-        fileStream.on('finish', resolve);
-        fileStream.on('error', reject);
-        videoStream.on('error', reject);
-      });
-
-      this.logger.log(`[Merge] Downloaded source video (${(existsSync(sourceFile) ? Math.round(require('fs').statSync(sourceFile).size / 1024 / 1024) : '?')}MB)`);
+      const fileSize = require('fs').statSync(sourceFile).size;
+      this.logger.log(`[Merge] Downloaded source video (${Math.round(fileSize / 1024 / 1024)}MB)`);
 
       // Step 2: Extract each segment with ffmpeg
       const segmentFiles: string[] = [];
@@ -1803,51 +1794,44 @@ PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis único
    * Used as final fallback when YouTube caption endpoints are blocked.
    */
   private async transcribeViaWhisper(videoId: string): Promise<string | null> {
-    const ytdl = (await import('@distube/ytdl-core')).default;
-
+    // Download audio using yt-dlp CLI
+    const tmpDir = join(process.cwd(), 'uploads', 'generated');
+    mkdirSync(tmpDir, { recursive: true });
+    const tmpFile = join(tmpDir, `whisper_${Date.now()}.mp3`);
     const url = `https://www.youtube.com/watch?v=${videoId}`;
-    const info = await ytdl.getInfo(url);
 
-    // Pick audio-only format (smallest, fastest to download)
-    const format = ytdl.chooseFormat(info.formats, { filter: 'audioonly', quality: 'lowestaudio' })
-      || ytdl.chooseFormat(info.formats, { filter: 'audioonly' });
+    this.logger.log(`[Whisper] Downloading audio for ${videoId} via yt-dlp...`);
 
-    if (!format) {
-      this.logger.warn(`[Whisper] No audio format found for ${videoId}`);
+    try {
+      execSync(
+        `yt-dlp -x --audio-format mp3 --audio-quality 5 --no-playlist -o "${tmpFile}" "${url}"`,
+        { timeout: 120000 },
+      );
+    } catch (dlError) {
+      this.logger.warn(`[Whisper] yt-dlp audio download failed: ${dlError.message}`);
       return null;
     }
 
-    this.logger.log(`[Whisper] Downloading audio for ${videoId} (format: ${format.mimeType}, ${format.contentLength ? Math.round(Number(format.contentLength) / 1024 / 1024) + 'MB' : 'unknown size'})`);
-
-    // Download audio to buffer (max 25MB for Whisper API)
-    const audioStream = ytdl.downloadFromInfo(info, { format });
-    const chunks: Buffer[] = [];
-    let totalSize = 0;
-    const MAX_SIZE = 24 * 1024 * 1024; // 24MB (Whisper limit is 25MB)
-
-    for await (const chunk of audioStream) {
-      chunks.push(chunk as Buffer);
-      totalSize += (chunk as Buffer).length;
-      if (totalSize > MAX_SIZE) {
-        this.logger.warn(`[Whisper] Audio exceeds 24MB for ${videoId}, truncating`);
-        break;
-      }
+    if (!existsSync(tmpFile)) {
+      this.logger.warn(`[Whisper] Audio file not created for ${videoId}`);
+      return null;
     }
 
-    const audioBuffer = Buffer.concat(chunks);
-    this.logger.log(`[Whisper] Downloaded ${Math.round(audioBuffer.length / 1024 / 1024)}MB audio for ${videoId}`);
+    const fileSize = require('fs').statSync(tmpFile).size;
+    this.logger.log(`[Whisper] Downloaded ${Math.round(fileSize / 1024 / 1024)}MB audio for ${videoId}`);
 
-    // Determine file extension from mime type
-    const ext = format.mimeType?.includes('webm') ? 'webm'
-      : format.mimeType?.includes('mp4') ? 'mp4'
-      : format.mimeType?.includes('ogg') ? 'ogg'
-      : 'mp3';
+    // Check size limit (25MB for Whisper API)
+    if (fileSize > 25 * 1024 * 1024) {
+      this.logger.warn(`[Whisper] Audio too large (${Math.round(fileSize / 1024 / 1024)}MB), trimming to 20 minutes`);
+      const trimmedFile = tmpFile.replace('.mp3', '_trimmed.mp3');
+      try {
+        execSync(`ffmpeg -y -i "${tmpFile}" -t 1200 -c copy "${trimmedFile}"`, { timeout: 30000 });
+        unlinkSync(tmpFile);
+        require('fs').renameSync(trimmedFile, tmpFile);
+      } catch { /* use original */ }
+    }
 
-    // Save temp audio file for Whisper API upload
-    const tmpDir = join(process.cwd(), 'uploads', 'generated');
-    mkdirSync(tmpDir, { recursive: true });
-    const tmpFile = join(tmpDir, `whisper_${Date.now()}.${ext}`);
-    writeFileSync(tmpFile, audioBuffer);
+    const ext = 'mp3';
 
     // Call OpenAI Whisper API using form-data
     const FormDataLib = (await import('form-data')).default;
