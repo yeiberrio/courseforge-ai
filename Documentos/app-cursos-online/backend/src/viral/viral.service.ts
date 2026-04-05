@@ -2,8 +2,10 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { ViralCategory, ContentLength } from '@prisma/client';
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, unlinkSync, createWriteStream } from 'fs';
 import { join } from 'path';
+import { execSync } from 'child_process';
+import { pipeline } from 'stream/promises';
 
 const VIRAL_KEYWORDS: Record<string, string[]> = {
   RELIGIOUS: [
@@ -1268,6 +1270,121 @@ PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis único
     }
 
     return '';
+  }
+
+  /**
+   * Merge selected video segments into a single MP4 file.
+   * Downloads the YouTube video once, then uses ffmpeg to extract and concatenate segments.
+   */
+  async mergeSegments(
+    youtubeVideoId: string,
+    segments: { start_seconds: number; end_seconds: number; title: string }[],
+    videoTitle: string,
+  ): Promise<{ filePath: string; fileName: string; duration: number }> {
+    if (!segments || segments.length === 0) {
+      throw new BadRequestException('Selecciona al menos un segmento para unir');
+    }
+
+    const ytdl = (await import('@distube/ytdl-core')).default;
+    const workDir = join(process.cwd(), 'uploads', 'generated', `merge_${Date.now()}`);
+    mkdirSync(workDir, { recursive: true });
+
+    const sourceFile = join(workDir, 'source.mp4');
+    const outputFile = join(workDir, 'merged.mp4');
+    const concatFile = join(workDir, 'concat.txt');
+
+    try {
+      // Step 1: Download full video
+      this.logger.log(`[Merge] Downloading video ${youtubeVideoId}...`);
+      const url = `https://www.youtube.com/watch?v=${youtubeVideoId}`;
+
+      const info = await ytdl.getInfo(url);
+      // Pick best format with both video+audio, prefer 720p
+      const format = ytdl.chooseFormat(info.formats, { quality: '18' }) // 360p mp4 (fast)
+        || ytdl.chooseFormat(info.formats, { filter: 'audioandvideo', quality: 'lowest' });
+
+      if (!format) {
+        throw new BadRequestException('No se encontró un formato de video descargable');
+      }
+
+      const videoStream = ytdl.downloadFromInfo(info, { format });
+      const fileStream = createWriteStream(sourceFile);
+      await pipeline(videoStream, fileStream);
+
+      this.logger.log(`[Merge] Downloaded source video (${(existsSync(sourceFile) ? Math.round(require('fs').statSync(sourceFile).size / 1024 / 1024) : '?')}MB)`);
+
+      // Step 2: Extract each segment with ffmpeg
+      const segmentFiles: string[] = [];
+      const sortedSegments = [...segments].sort((a, b) => a.start_seconds - b.start_seconds);
+
+      for (let i = 0; i < sortedSegments.length; i++) {
+        const seg = sortedSegments[i];
+        const segFile = join(workDir, `seg_${String(i).padStart(3, '0')}.mp4`);
+        const duration = seg.end_seconds - seg.start_seconds;
+
+        this.logger.log(`[Merge] Extracting segment ${i + 1}/${sortedSegments.length}: ${seg.start_seconds}s → ${seg.end_seconds}s (${duration}s)`);
+
+        execSync(
+          `ffmpeg -y -i "${sourceFile}" -ss ${seg.start_seconds} -t ${duration} -c copy -avoid_negative_ts make_zero "${segFile}"`,
+          { timeout: 60000 },
+        );
+
+        if (existsSync(segFile)) {
+          segmentFiles.push(segFile);
+        }
+      }
+
+      if (segmentFiles.length === 0) {
+        throw new BadRequestException('No se pudo extraer ningún segmento del video');
+      }
+
+      // Step 3: Concatenate segments with ffmpeg
+      this.logger.log(`[Merge] Concatenating ${segmentFiles.length} segments...`);
+      const concatContent = segmentFiles.map((f) => `file '${f}'`).join('\n');
+      writeFileSync(concatFile, concatContent);
+
+      execSync(
+        `ffmpeg -y -f concat -safe 0 -i "${concatFile}" -c copy "${outputFile}"`,
+        { timeout: 120000 },
+      );
+
+      if (!existsSync(outputFile)) {
+        // Fallback: re-encode if concat copy fails (codec mismatch between segments)
+        this.logger.warn(`[Merge] Copy concat failed, re-encoding...`);
+        execSync(
+          `ffmpeg -y -f concat -safe 0 -i "${concatFile}" -c:v libx264 -preset ultrafast -c:a aac "${outputFile}"`,
+          { timeout: 300000 },
+        );
+      }
+
+      // Clean up temp files
+      if (existsSync(sourceFile)) unlinkSync(sourceFile);
+      segmentFiles.forEach((f) => { if (existsSync(f)) unlinkSync(f); });
+      if (existsSync(concatFile)) unlinkSync(concatFile);
+
+      const totalDuration = sortedSegments.reduce((sum, s) => sum + (s.end_seconds - s.start_seconds), 0);
+      const safeTitle = videoTitle.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s-]/g, '').substring(0, 60).trim();
+      const fileName = `${safeTitle} - Highlights.mp4`;
+      const relativePath = outputFile.replace(join(process.cwd(), 'uploads'), '');
+
+      this.logger.log(`[Merge] Done! ${segmentFiles.length} segments merged (${totalDuration}s total)`);
+
+      return {
+        filePath: `/uploads${relativePath.replace(/\\/g, '/')}`,
+        fileName,
+        duration: totalDuration,
+      };
+    } catch (error) {
+      // Clean up on error
+      try {
+        const { rmSync } = require('fs');
+        if (existsSync(workDir)) rmSync(workDir, { recursive: true, force: true });
+      } catch { /* ignore cleanup errors */ }
+
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error(`[Merge] Failed: ${error.message}`);
+      throw new BadRequestException(`Error al unir segmentos: ${error.message}`);
+    }
   }
 
   /**

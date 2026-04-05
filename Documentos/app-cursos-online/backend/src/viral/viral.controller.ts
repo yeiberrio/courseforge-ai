@@ -118,6 +118,40 @@ export class ViralController {
     }
   }
 
+  @Post('videos/:id/merge-segments')
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Unir segmentos seleccionados en un solo video MP4' })
+  async mergeSegments(
+    @Param('id') videoId: string,
+    @Body() body: {
+      segments: { start_seconds: number; end_seconds: number; title: string }[];
+    },
+  ) {
+    try {
+      let video = await this.viralService['prisma'].viralVideo.findUnique({ where: { id: videoId } });
+      if (!video) {
+        video = await this.viralService['prisma'].viralVideo.findFirst({
+          where: { youtube_video_id: videoId },
+          orderBy: { created_at: 'desc' },
+        });
+      }
+      if (!video) throw new HttpException('Video no encontrado', HttpStatus.NOT_FOUND);
+
+      return await this.viralService.mergeSegments(
+        video.youtube_video_id,
+        body.segments,
+        video.title || 'Video',
+      );
+    } catch (error) {
+      this.logger.error(`Merge segments failed: ${error.message}`);
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        error.message || 'Error al unir segmentos',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
   @Post('process')
   @Roles(UserRole.CREATOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Procesar transcripción con opciones avanzadas (tono, audiencia, objetivo)' })

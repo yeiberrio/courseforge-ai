@@ -225,6 +225,11 @@ export default function ProcesarViralPage() {
   const [segments, setSegments] = useState<SegmentsResult | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
+  // Merge segments
+  const [selectedSegments, setSelectedSegments] = useState<Set<number>>(new Set());
+  const [merging, setMerging] = useState(false);
+  const [mergeResult, setMergeResult] = useState<{ filePath: string; fileName: string; duration: number } | null>(null);
+
   // Step 3: Processing
   const [processing, setProcessing] = useState(false);
   const [document, setDocument] = useState<ProcessedDocument | null>(null);
@@ -304,6 +309,60 @@ export default function ProcesarViralPage() {
     navigator.clipboard.writeText(url);
     setCopiedUrl(url);
     setTimeout(() => setCopiedUrl(null), 2000);
+  };
+
+  const toggleSegmentSelection = (index: number) => {
+    setSelectedSegments((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const toggleAllSegments = () => {
+    if (!segments) return;
+    if (selectedSegments.size === segments.segments.length) {
+      setSelectedSegments(new Set());
+    } else {
+      setSelectedSegments(new Set(segments.segments.map((_, i) => i)));
+    }
+  };
+
+  const handleMergeSegments = async () => {
+    if (!token || !video || !segments || selectedSegments.size === 0) return;
+    setError("");
+    setMerging(true);
+    setMergeResult(null);
+
+    try {
+      const segsToMerge = segments.segments
+        .filter((_, i) => selectedSegments.has(i))
+        .map((seg) => {
+          // Parse end timestamp to seconds
+          const endParts = seg.end.split(":").map(Number);
+          const endSeconds = endParts.length === 3
+            ? endParts[0] * 3600 + endParts[1] * 60 + endParts[2]
+            : endParts[0] * 60 + endParts[1];
+          return {
+            start_seconds: seg.start_seconds,
+            end_seconds: endSeconds,
+            title: seg.title,
+          };
+        });
+
+      const result = await api.post<{ filePath: string; fileName: string; duration: number }>(
+        `/viral/videos/${video.id}/merge-segments`,
+        { segments: segsToMerge },
+        token,
+      );
+      setMergeResult(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Error al unir segmentos";
+      setError(message);
+    } finally {
+      setMerging(false);
+    }
   };
 
   const handleProcess = async () => {
@@ -635,6 +694,80 @@ export default function ProcesarViralPage() {
                 )}
               </div>
 
+              {/* Selection toolbar */}
+              <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 bg-gray-50/50">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={toggleAllSegments}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-600 hover:text-purple-800"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedSegments.size === segments.segments.length && segments.segments.length > 0}
+                      readOnly
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    {selectedSegments.size === segments.segments.length ? "Deseleccionar todos" : "Seleccionar todos"}
+                  </button>
+                  {selectedSegments.size > 0 && (
+                    <span className="text-xs text-gray-500">
+                      {selectedSegments.size} de {segments.segments.length} seleccionados
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={handleMergeSegments}
+                  disabled={selectedSegments.size === 0 || merging}
+                  className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 text-xs font-medium text-white shadow-sm hover:from-purple-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  {merging ? (
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin" />Uniendo video...</>
+                  ) : (
+                    <><Play className="h-3.5 w-3.5" />Unir {selectedSegments.size > 0 ? `${selectedSegments.size} segmentos` : "segmentos"}</>
+                  )}
+                </button>
+              </div>
+
+              {/* Merge progress */}
+              {merging && (
+                <div className="border-b border-purple-100 bg-purple-50 px-5 py-3">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
+                    <div>
+                      <p className="text-sm font-medium text-purple-800">Generando video compilado...</p>
+                      <p className="text-xs text-purple-600">Descargando video → Cortando segmentos → Uniendo. Esto puede tardar 1-3 minutos.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Merge result */}
+              {mergeResult && (
+                <div className="border-b border-green-100 bg-green-50 px-5 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
+                        <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-green-900">Video compilado listo</p>
+                        <p className="text-xs text-green-700">
+                          {mergeResult.fileName} — {Math.floor(mergeResult.duration / 60)}:{String(mergeResult.duration % 60).padStart(2, "0")} de duración
+                        </p>
+                      </div>
+                    </div>
+                    <a
+                      href={`${process.env.NEXT_PUBLIC_API_URL?.replace("/api/v1", "")}${mergeResult.filePath}`}
+                      download={mergeResult.fileName}
+                      className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 transition-colors"
+                    >
+                      <Download className="h-4 w-4" />
+                      Descargar MP4
+                    </a>
+                  </div>
+                </div>
+              )}
+
               {/* Segments list */}
               <div className="divide-y divide-gray-100">
                 {segments.segments.map((seg, i) => {
@@ -657,12 +790,27 @@ export default function ProcesarViralPage() {
                   };
                   const rc = relevanceConfig[seg.relevance] || { bg: "bg-gray-100", text: "text-gray-700", label: seg.relevance };
                   const isHighScore = seg.score >= 8;
+                  const isSelected = selectedSegments.has(i);
 
                   return (
                     <div
                       key={i}
-                      className={`flex items-start gap-4 p-5 transition-colors hover:bg-purple-50/50 ${isHighScore ? "bg-purple-50/30" : ""}`}
+                      onClick={() => toggleSegmentSelection(i)}
+                      className={`flex items-start gap-4 p-5 transition-colors cursor-pointer ${
+                        isSelected ? "bg-purple-50 border-l-4 border-l-purple-500" : isHighScore ? "bg-purple-50/30 border-l-4 border-l-transparent" : "border-l-4 border-l-transparent"
+                      } hover:bg-purple-50/50`}
                     >
+                      {/* Checkbox */}
+                      <div className="flex shrink-0 pt-1">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSegmentSelection(i)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                        />
+                      </div>
+
                       {/* Number + Score */}
                       <div className="flex shrink-0 flex-col items-center gap-1.5">
                         <span className="text-xs font-medium text-gray-400">#{i + 1}</span>
@@ -688,7 +836,7 @@ export default function ProcesarViralPage() {
                         <p className="mb-3 text-sm leading-relaxed text-gray-600">{seg.summary}</p>
 
                         {/* Actions row */}
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <span className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-mono font-medium text-gray-700">
                             <Timer className="h-3 w-3" />
                             {seg.start} → {seg.end}
