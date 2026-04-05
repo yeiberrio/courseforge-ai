@@ -295,6 +295,9 @@ export default function ProcesarViralPage() {
         token,
       );
       setSegments(result);
+      // Auto-select all segments
+      setSelectedSegments(new Set(result.segments.map((_: VideoSegment, i: number) => i)));
+      setMergeResult(null);
       setSegmentsPhase("idle");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Error al extraer segmentos";
