@@ -81,6 +81,15 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
         key: TOKEN_KEY,
         newValue: newToken,
       }));
+    } else {
+      // Refresh failed - clear tokens and redirect to login
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(REFRESH_KEY);
+        localStorage.removeItem("cf_user");
+        window.location.href = "/login";
+      }
+      throw new Error("Sesión expirada. Inicia sesión de nuevo.");
     }
   }
 

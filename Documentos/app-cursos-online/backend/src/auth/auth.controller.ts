@@ -40,15 +40,12 @@ export class AuthController {
     return this.authService.register(registerDto);
   }
 
+  @Public()
   @Post('refresh')
-  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refrescar token de acceso' })
-  async refresh(
-    @CurrentUser('id') userId: string,
-    @Body('refresh_token') refreshToken: string,
-  ) {
-    return this.authService.refreshTokens(userId, refreshToken);
+  async refresh(@Body('refresh_token') refreshToken: string) {
+    return this.authService.refreshFromToken(refreshToken);
   }
 
   @Post('change-password')
