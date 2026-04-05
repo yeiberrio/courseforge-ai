@@ -1070,30 +1070,17 @@ ${goalInstructions}`;
     }
     if (!video) throw new NotFoundException('Video no encontrado');
 
-    // Use provided transcription or auto-transcribe
+    // Use provided transcription or auto-transcribe via the full transcription flow
     let text = transcription;
     let transcriptionSource = 'provided';
     if (!text) {
-      this.logger.log(`[Segments] No transcription provided for ${video.youtube_video_id}, auto-transcribing...`);
-      const captions = await this.getYouTubeCaptions(video.youtube_video_id);
-      if (captions) {
-        text = captions;
-        transcriptionSource = 'captions';
-        // Update transcription status since we fetched it
-        await this.prisma.viralVideo.update({
-          where: { id: video.id },
-          data: { transcription_status: 'DONE' },
-        });
-      } else {
-        // Fallback: use metadata-based context
-        text = [
-          `[Título]: ${video.title}`,
-          `[Canal]: ${video.channel_name}`,
-          `[Categoría]: ${video.category}`,
-          video.duration_seconds ? `[Duración]: ${this.formatDuration(video.duration_seconds)}` : '',
-        ].filter(Boolean).join('\n');
-        transcriptionSource = 'metadata';
-        this.logger.warn(`[Segments] No captions for ${video.youtube_video_id}, using metadata`);
+      this.logger.log(`[Segments] No transcription provided, running transcribeVideo for ${video.youtube_video_id}...`);
+      const transcribeResult = await this.transcribeVideo(videoId);
+      text = transcribeResult.transcription;
+      transcriptionSource = transcribeResult.source; // 'captions' or 'metadata'
+
+      if (transcriptionSource === 'metadata') {
+        this.logger.warn(`[Segments] Only metadata available for ${video.youtube_video_id}, segments will be estimated`);
       }
     }
 
@@ -1604,138 +1591,162 @@ PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis único
 
   /**
    * Fetch actual YouTube captions with timestamps.
-   * Uses YouTube's internal timedtext endpoint (no OAuth required).
+   * Tries multiple InnerTube client types to bypass cloud IP restrictions.
    */
   private async getYouTubeCaptions(videoId: string): Promise<string | null> {
-    // Strategy 1: InnerTube API (Android client - most reliable, no browser blocks)
-    try {
-      const result = await this.getCaptionsViaInnerTube(videoId);
-      if (result) return result;
-    } catch (error) {
-      this.logger.warn(`[Captions] InnerTube method failed for ${videoId}: ${error.message}`);
+    // Try multiple InnerTube clients - cloud providers often block some but not all
+    const clients = [
+      {
+        name: 'ANDROID',
+        clientName: 'ANDROID',
+        clientVersion: '20.10.38',
+        userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+      },
+      {
+        name: 'IOS',
+        clientName: 'IOS',
+        clientVersion: '20.10.4',
+        userAgent: 'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)',
+      },
+      {
+        name: 'TV_EMBEDDED',
+        clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
+        clientVersion: '2.0',
+        userAgent: 'Mozilla/5.0 (SMART-TV; Linux; Tizen 6.5)',
+      },
+      {
+        name: 'WEB',
+        clientName: 'WEB',
+        clientVersion: '2.20250401.01.00',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      },
+    ];
+
+    for (const client of clients) {
+      try {
+        const result = await this.getCaptionsViaInnerTube(videoId, client);
+        if (result) return result;
+      } catch (error) {
+        this.logger.warn(`[Captions] InnerTube ${client.name} failed for ${videoId}: ${error.message}`);
+      }
     }
 
-    // Strategy 2: Scrape YouTube page directly (fallback)
+    // Fallback: Scrape YouTube page
     try {
       const result = await this.getCaptionsViaScraping(videoId);
       if (result) return result;
     } catch (error) {
-      this.logger.warn(`[Captions] Scraping method failed for ${videoId}: ${error.message}`);
+      this.logger.warn(`[Captions] Scraping failed for ${videoId}: ${error.message}`);
     }
 
-    this.logger.warn(`[Captions] All caption extraction methods failed for ${videoId}`);
+    this.logger.warn(`[Captions] All methods failed for ${videoId}`);
     return null;
   }
 
-  private async getCaptionsViaInnerTube(videoId: string): Promise<string | null> {
+  private async getCaptionsViaInnerTube(
+    videoId: string,
+    client: { name: string; clientName: string; clientVersion: string; userAgent: string },
+  ): Promise<string | null> {
     const INNERTUBE_URL = 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false';
-    const CLIENT_VERSION = '20.10.38';
-    const ANDROID_UA = `com.google.android.youtube/${CLIENT_VERSION} (Linux; U; Android 14)`;
 
-    const response = await fetch(INNERTUBE_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': ANDROID_UA,
-      },
-      body: JSON.stringify({
-        context: {
-          client: {
-            clientName: 'ANDROID',
-            clientVersion: CLIENT_VERSION,
-          },
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch(INNERTUBE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': client.userAgent,
         },
-        videoId,
-      }),
-    });
+        body: JSON.stringify({
+          context: {
+            client: {
+              clientName: client.clientName,
+              clientVersion: client.clientVersion,
+            },
+          },
+          videoId,
+        }),
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      this.logger.warn(`[Captions] InnerTube: API returned ${response.status} for ${videoId}`);
-      return null;
+      if (!response.ok) {
+        this.logger.warn(`[Captions] InnerTube ${client.name}: status ${response.status} for ${videoId}`);
+        return null;
+      }
+
+      const data = await response.json();
+      const captionTracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+
+      if (!Array.isArray(captionTracks) || captionTracks.length === 0) {
+        this.logger.warn(`[Captions] InnerTube ${client.name}: no tracks for ${videoId}`);
+        return null;
+      }
+
+      this.logger.log(`[Captions] InnerTube ${client.name}: found ${captionTracks.length} tracks for ${videoId}`);
+      return this.fetchAndParseCaptionTracks(captionTracks, videoId, `InnerTube-${client.name}`);
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const data = await response.json();
-    const captionTracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-
-    if (!Array.isArray(captionTracks) || captionTracks.length === 0) {
-      this.logger.warn(`[Captions] InnerTube: No caption tracks for ${videoId}`);
-      return null;
-    }
-
-    return this.fetchAndParseCaptionTracks(captionTracks, videoId, 'InnerTube');
   }
 
   private async getCaptionsViaScraping(videoId: string): Promise<string | null> {
     const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-    const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: {
-        'User-Agent': userAgent,
-        'Accept-Language': 'es,en;q=0.9',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-    });
-    if (!pageResponse.ok) {
-      this.logger.warn(`[Captions] Scraping: YouTube page returned ${pageResponse.status} for ${videoId}`);
-      return null;
-    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
-    const pageHtml = await pageResponse.text();
+    try {
+      const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+        headers: {
+          'User-Agent': userAgent,
+          'Accept-Language': 'es,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        signal: controller.signal,
+      });
+      if (!pageResponse.ok) return null;
 
-    // Extract ytInitialPlayerResponse JSON properly (balanced braces)
-    let captionTracks: any[] | null = null;
-    const marker = 'var ytInitialPlayerResponse = ';
-    const startIdx = pageHtml.indexOf(marker);
-    if (startIdx !== -1) {
-      const jsonStart = startIdx + marker.length;
-      let depth = 0;
-      for (let i = jsonStart; i < pageHtml.length; i++) {
-        if (pageHtml[i] === '{') depth++;
-        else if (pageHtml[i] === '}') {
-          depth--;
-          if (depth === 0) {
-            try {
-              const playerData = JSON.parse(pageHtml.slice(jsonStart, i + 1));
-              captionTracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-            } catch {
-              // malformed JSON
+      const pageHtml = await pageResponse.text();
+
+      // Extract ytInitialPlayerResponse JSON (balanced braces)
+      let captionTracks: any[] | null = null;
+      const marker = 'var ytInitialPlayerResponse = ';
+      const startIdx = pageHtml.indexOf(marker);
+      if (startIdx !== -1) {
+        const jsonStart = startIdx + marker.length;
+        let depth = 0;
+        for (let i = jsonStart; i < pageHtml.length; i++) {
+          if (pageHtml[i] === '{') depth++;
+          else if (pageHtml[i] === '}') {
+            depth--;
+            if (depth === 0) {
+              try {
+                const playerData = JSON.parse(pageHtml.slice(jsonStart, i + 1));
+                captionTracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+              } catch { /* malformed */ }
+              break;
             }
-            break;
           }
         }
       }
-    }
 
-    // Fallback: regex patterns
-    if (!captionTracks) {
-      const patterns = [
-        /"captionTracks":\s*(\[.*?\])\s*[,}]/,
-        /captionTracks"\s*:\s*(\[.*?\])/,
-      ];
-      for (const pattern of patterns) {
-        const match = pageHtml.match(pattern);
+      if (!captionTracks) {
+        const match = pageHtml.match(/"captionTracks":\s*(\[.*?\])\s*[,}]/);
         if (match) {
-          try {
-            captionTracks = JSON.parse(match[1]);
-            if (captionTracks && captionTracks.length > 0) break;
-          } catch {
-            captionTracks = null;
-          }
+          try { captionTracks = JSON.parse(match[1]); } catch { /* */ }
         }
       }
-    }
 
-    if (!captionTracks || captionTracks.length === 0) {
-      this.logger.warn(`[Captions] Scraping: No caption tracks found in HTML for ${videoId}`);
-      return null;
+      if (!captionTracks || captionTracks.length === 0) return null;
+      return this.fetchAndParseCaptionTracks(captionTracks, videoId, 'Scraping');
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return this.fetchAndParseCaptionTracks(captionTracks, videoId, 'Scraping');
   }
 
   private async fetchAndParseCaptionTracks(captionTracks: any[], videoId: string, source: string): Promise<string | null> {
-    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-
     // Prefer: Spanish manual > Spanish auto > any manual > any auto
     const spanishManual = captionTracks.find(
       (t: any) => (t.languageCode === 'es' || t.languageCode === 'es-419') && t.kind !== 'asr',
@@ -1748,35 +1759,50 @@ PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis único
 
     const track = spanishManual || spanishAuto || anyManual || anyTrack;
     if (!track?.baseUrl) {
-      this.logger.warn(`[Captions] ${source}: Track found but no baseUrl for ${videoId}`);
+      this.logger.warn(`[Captions] ${source}: no baseUrl for ${videoId}`);
       return null;
     }
 
-    // Fetch caption content - try without fmt first (default XML), then specific formats
-    const formats = ['', '&fmt=srv3', '&fmt=srv1'];
-    let lines: string[] = [];
+    this.logger.log(`[Captions] ${source}: fetching XML for ${videoId} (lang: ${track.languageCode})`);
 
-    for (const fmt of formats) {
-      const captionUrl = track.baseUrl + fmt;
-      const captionResponse = await fetch(captionUrl, {
-        headers: { 'User-Agent': userAgent },
-      });
-      if (!captionResponse.ok) continue;
+    // Try multiple User-Agents for the XML fetch (YouTube blocks some from cloud)
+    const userAgents = [
+      'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)',
+    ];
 
-      const captionContent = await captionResponse.text();
-      if (!captionContent || captionContent.length === 0) continue;
+    for (const ua of userAgents) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
 
-      lines = this.parseCaptionXml(captionContent);
-      if (lines.length > 0) break;
+      try {
+        const captionResponse = await fetch(track.baseUrl, {
+          headers: { 'User-Agent': ua },
+          signal: controller.signal,
+        });
+        if (!captionResponse.ok) continue;
+
+        const captionContent = await captionResponse.text();
+        if (!captionContent || captionContent.length === 0) {
+          this.logger.warn(`[Captions] ${source}: empty XML with UA ${ua.substring(0, 30)}...`);
+          continue;
+        }
+
+        const lines = this.parseCaptionXml(captionContent);
+        if (lines.length > 0) {
+          this.logger.log(`[Captions] ${source}: parsed ${lines.length} lines for ${videoId}`);
+          return lines.join('\n');
+        }
+      } catch (error) {
+        this.logger.warn(`[Captions] ${source}: XML fetch error with UA ${ua.substring(0, 20)}: ${error.message}`);
+      } finally {
+        clearTimeout(timeout);
+      }
     }
 
-    if (lines.length === 0) {
-      this.logger.warn(`[Captions] ${source}: Could not parse captions for ${videoId}`);
-      return null;
-    }
-
-    this.logger.log(`[Captions] ${source}: Fetched ${lines.length} lines for ${videoId} (lang: ${track.languageCode})`);
-    return lines.join('\n');
+    this.logger.warn(`[Captions] ${source}: all XML fetches returned empty for ${videoId}`);
+    return null;
   }
 
   private parseCaptionXml(captionXml: string): string[] {

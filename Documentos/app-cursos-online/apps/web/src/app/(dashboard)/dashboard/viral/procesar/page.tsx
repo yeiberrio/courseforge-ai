@@ -274,11 +274,16 @@ export default function ProcesarViralPage() {
     if (!token || !video) return;
     setError("");
     setExtractingSegments(true);
-    setSegmentsPhase("transcribing");
+    setSegments(null);
 
     try {
-      // The backend auto-transcribes if no transcription is provided
+      // Phase 1: Transcribing (backend auto-transcribes + extracts in one call)
+      setSegmentsPhase("transcribing");
+
+      // Small delay to show the transcribing phase visually
+      await new Promise((r) => setTimeout(r, 500));
       setSegmentsPhase("analyzing");
+
       const result = await api.post<SegmentsResult>(
         `/viral/videos/${video.id}/segments`,
         { transcription: transcription || undefined },
