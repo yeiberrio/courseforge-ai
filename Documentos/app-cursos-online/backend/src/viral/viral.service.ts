@@ -513,10 +513,16 @@ export class ViralService {
     });
 
     try {
-      let transcription = await this.getYouTubeCaptions(video.youtube_video_id);
+      const transcription = await this.getYouTubeCaptions(video.youtube_video_id);
 
       if (!transcription) {
-        transcription = `[Título]: ${video.title}\n[Canal]: ${video.channel_name}\n[Categoría]: ${video.category}\n\nNota: No se pudieron obtener subtítulos automáticos. Usar Whisper API con audio descargado para transcripción completa.`;
+        await this.prisma.viralVideo.update({
+          where: { id: dbId },
+          data: { transcription_status: 'FAILED' },
+        });
+        throw new BadRequestException(
+          'No se pudieron obtener subtítulos para este video. El video puede no tener subtítulos disponibles.',
+        );
       }
 
       await this.prisma.viralVideo.update({
@@ -1066,16 +1072,24 @@ ${goalInstructions}`;
     }
 
     const systemPrompt = `Eres un experto en análisis de contenido de video y marketing digital.
-Se te proporcionará la transcripción de un video de YouTube.
+Se te proporcionará la transcripción REAL con timestamps de un video de YouTube.
 
 Tu tarea es identificar los segmentos más valiosos e interesantes del video.
 
+IMPORTANTE - REGLAS DE TIMESTAMPS:
+- La transcripción tiene formato "[M:SS] texto..." con timestamps REALES del video
+- DEBES usar ÚNICAMENTE los timestamps que aparecen en la transcripción
+- NO inventes ni estimes timestamps. Cada segmento DEBE corresponder a un timestamp exacto de la transcripción
+- Lee el texto en cada timestamp para entender QUÉ está pasando en ese momento exacto
+- El título y resumen del segmento DEBEN describir lo que REALMENTE se dice/muestra en esos timestamps
+- NO asumas el contenido basándote en el título del video - usa SOLO lo que dice la transcripción
+
 Para cada segmento, debes extraer:
-- start: timestamp de inicio (formato M:SS o H:MM:SS)
-- end: timestamp de fin (formato M:SS o H:MM:SS)
-- start_seconds: inicio en segundos (número entero)
-- title: título descriptivo corto del segmento
-- summary: resumen de 1-2 oraciones de lo que se dice/muestra
+- start: timestamp de inicio EXACTO tomado de la transcripción (formato M:SS o H:MM:SS)
+- end: timestamp de fin tomado de la transcripción (formato M:SS o H:MM:SS)
+- start_seconds: inicio en segundos (número entero, calculado del timestamp)
+- title: título descriptivo corto del segmento basado en lo que REALMENTE se dice
+- summary: resumen de 1-2 oraciones de lo que REALMENTE se dice en la transcripción en ese rango de tiempo
 - relevance: tipo de relevancia (uno de: "hook", "dato_clave", "momento_viral", "cta", "storytelling", "controversia", "tutorial", "humor", "emocional", "insight")
 - score: puntuación de 1 a 10 de qué tan valioso/interesante es el segmento
 
@@ -1085,6 +1099,7 @@ REGLAS:
 - Ordénalos cronológicamente por timestamp
 - Prioriza momentos que: generen engagement, sean compartibles, tengan valor educativo, o sean virales
 - El video tiene una duración de ${video.duration_seconds} segundos (${this.formatDuration(video.duration_seconds)})
+- VERIFICA que cada título y resumen corresponda al contenido REAL de la transcripción en esos timestamps
 
 FORMATO DE SALIDA (JSON estricto):
 {
@@ -1093,8 +1108,8 @@ FORMATO DE SALIDA (JSON estricto):
       "start": "0:00",
       "end": "0:45",
       "start_seconds": 0,
-      "title": "Hook inicial impactante",
-      "summary": "El creador abre con una pregunta que genera curiosidad...",
+      "title": "Título basado en lo que realmente se dice",
+      "summary": "Resumen fiel al contenido real de la transcripción en este rango...",
       "relevance": "hook",
       "score": 9
     }
@@ -1108,9 +1123,10 @@ FORMATO DE SALIDA (JSON estricto):
 Canal: ${video.channel_name}
 Categoría: ${video.category}
 
-Transcripción:
-${text.substring(0, 12000)}
+Transcripción con timestamps:
+${text.substring(0, 15000)}
 
+RECUERDA: Usa SOLO los timestamps y contenido que aparecen en la transcripción anterior. No inventes eventos ni timestamps.
 Extrae los segmentos más valiosos en formato JSON.`;
 
     let content = '';
@@ -1519,28 +1535,113 @@ Extrae los segmentos más valiosos en formato JSON.`;
     return labels[key] || key;
   }
 
+  /**
+   * Fetch actual YouTube captions with timestamps.
+   * Uses YouTube's internal timedtext endpoint (no OAuth required).
+   */
   private async getYouTubeCaptions(videoId: string): Promise<string | null> {
     try {
-      const captionsResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/captions?videoId=${videoId}&part=snippet&key=${this.youtubeApiKey}`,
+      // Step 1: Fetch the video page to extract caption track URLs
+      const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+        headers: { 'Accept-Language': 'es,en;q=0.9' },
+      });
+      if (!pageResponse.ok) return null;
+
+      const pageHtml = await pageResponse.text();
+
+      // Extract captions JSON from the page's ytInitialPlayerResponse
+      const captionsMatch = pageHtml.match(/"captionTracks":\s*(\[.*?\])/);
+      if (!captionsMatch) return null;
+
+      let captionTracks: any[];
+      try {
+        captionTracks = JSON.parse(captionsMatch[1]);
+      } catch {
+        return null;
+      }
+
+      if (!captionTracks || captionTracks.length === 0) return null;
+
+      // Prefer: Spanish manual > Spanish auto > any manual > any auto
+      const spanishManual = captionTracks.find(
+        (t: any) => (t.languageCode === 'es' || t.languageCode === 'es-419') && t.kind !== 'asr',
       );
-
-      if (!captionsResponse.ok) return null;
-
-      const captionsData = await captionsResponse.json();
-      const spanishCaption = captionsData.items?.find(
-        (c: any) => c.snippet.language === 'es' || c.snippet.language === 'es-419',
+      const spanishAuto = captionTracks.find(
+        (t: any) => (t.languageCode === 'es' || t.languageCode === 'es-419'),
       );
-      const autoCaption = captionsData.items?.find(
-        (c: any) => c.snippet.trackKind === 'ASR',
-      );
-      const anyCaption = captionsData.items?.[0];
+      const anyManual = captionTracks.find((t: any) => t.kind !== 'asr');
+      const anyTrack = captionTracks[0];
 
-      const captionId = spanishCaption?.id || autoCaption?.id || anyCaption?.id;
-      if (!captionId) return null;
+      const track = spanishManual || spanishAuto || anyManual || anyTrack;
+      if (!track?.baseUrl) return null;
 
-      return `[Subtítulos disponibles para video ${videoId}. Caption ID: ${captionId}. Idioma: ${spanishCaption?.snippet.language || autoCaption?.snippet.language || 'auto'}]`;
-    } catch {
+      // Step 2: Fetch the actual captions in XML format
+      const captionUrl = track.baseUrl + '&fmt=srv3';
+      const captionResponse = await fetch(captionUrl);
+      if (!captionResponse.ok) return null;
+
+      const captionXml = await captionResponse.text();
+
+      // Step 3: Parse XML captions into timestamped text
+      // Format: <p t="startMs" d="durationMs">text</p>
+      const lines: string[] = [];
+      const pRegex = /<p\s+t="(\d+)"\s+d="(\d+)"[^>]*>([\s\S]*?)<\/p>/g;
+      let match: RegExpExecArray | null;
+
+      while ((match = pRegex.exec(captionXml)) !== null) {
+        const startMs = parseInt(match[1]);
+        const text = match[3]
+          .replace(/<[^>]+>/g, '') // strip HTML tags
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/\n/g, ' ')
+          .trim();
+
+        if (!text) continue;
+
+        const totalSeconds = Math.floor(startMs / 1000);
+        const mins = Math.floor(totalSeconds / 60);
+        const secs = totalSeconds % 60;
+        const timestamp = `${mins}:${String(secs).padStart(2, '0')}`;
+
+        lines.push(`[${timestamp}] ${text}`);
+      }
+
+      // Fallback: try <text> format (older caption format)
+      if (lines.length === 0) {
+        const textRegex = /<text\s+start="([\d.]+)"\s+dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
+        while ((match = textRegex.exec(captionXml)) !== null) {
+          const startSec = parseFloat(match[1]);
+          const text = match[3]
+            .replace(/<[^>]+>/g, '')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\n/g, ' ')
+            .trim();
+
+          if (!text) continue;
+
+          const totalSeconds = Math.floor(startSec);
+          const mins = Math.floor(totalSeconds / 60);
+          const secs = totalSeconds % 60;
+          const timestamp = `${mins}:${String(secs).padStart(2, '0')}`;
+
+          lines.push(`[${timestamp}] ${text}`);
+        }
+      }
+
+      if (lines.length === 0) return null;
+
+      this.logger.log(`[Captions] Fetched ${lines.length} caption lines for video ${videoId} (lang: ${track.languageCode})`);
+      return lines.join('\n');
+    } catch (error) {
+      this.logger.warn(`[Captions] Failed to fetch captions for ${videoId}: ${error.message}`);
       return null;
     }
   }
