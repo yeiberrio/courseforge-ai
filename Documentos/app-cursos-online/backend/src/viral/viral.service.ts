@@ -495,9 +495,11 @@ export class ViralService {
   }
 
   /**
-   * Transcribe a viral video using YouTube captions or Whisper.
+   * Transcribe a viral video using YouTube captions.
+   * Caches the transcription in the database so subsequent calls (e.g. extractSegments)
+   * reuse it without re-fetching from YouTube.
    */
-  async transcribeVideo(videoId: string) {
+  async transcribeVideo(videoId: string, forceRefresh = false) {
     let video = await this.prisma.viralVideo.findUnique({ where: { id: videoId } });
     if (!video) {
       video = await this.prisma.viralVideo.findFirst({
@@ -509,6 +511,12 @@ export class ViralService {
 
     const dbId = video.id;
 
+    // Return cached transcription if available (only real captions, not metadata)
+    if (!forceRefresh && video.cached_transcription && video.transcription_source === 'captions') {
+      this.logger.log(`[Transcribe] Using cached captions for ${video.youtube_video_id} (${video.cached_transcription.length} chars)`);
+      return { transcription: video.cached_transcription, source: 'captions' };
+    }
+
     await this.prisma.viralVideo.update({
       where: { id: dbId },
       data: { transcription_status: 'PROCESSING' },
@@ -518,10 +526,16 @@ export class ViralService {
       const transcription = await this.getYouTubeCaptions(video.youtube_video_id);
 
       if (transcription) {
+        // Cache the real transcription in the database
         await this.prisma.viralVideo.update({
           where: { id: dbId },
-          data: { transcription_status: 'DONE' },
+          data: {
+            transcription_status: 'DONE',
+            cached_transcription: transcription,
+            transcription_source: 'captions',
+          },
         });
+        this.logger.log(`[Transcribe] Cached ${transcription.length} chars of captions for ${video.youtube_video_id}`);
         return { transcription, source: 'captions' };
       }
 
@@ -538,7 +552,7 @@ export class ViralService {
 
       await this.prisma.viralVideo.update({
         where: { id: dbId },
-        data: { transcription_status: 'DONE' },
+        data: { transcription_status: 'DONE', transcription_source: 'metadata' },
       });
 
       return { transcription: metadataTranscription, source: 'metadata' };
@@ -1739,21 +1753,30 @@ PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis único
       },
     ];
 
+    // Try each client with a retry (2 attempts per client, 1s delay between)
     for (const client of clients) {
-      try {
-        const result = await this.getCaptionsViaInnerTube(videoId, client);
-        if (result) return result;
-      } catch (error) {
-        this.logger.warn(`[Captions] InnerTube ${client.name} failed for ${videoId}: ${error.message}`);
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const result = await this.getCaptionsViaInnerTube(videoId, client);
+          if (result) return result;
+          break; // null result = no tracks, don't retry same client
+        } catch (error) {
+          this.logger.warn(`[Captions] InnerTube ${client.name} attempt ${attempt} failed for ${videoId}: ${error.message}`);
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 1000));
+        }
       }
     }
 
-    // Fallback: Scrape YouTube page
-    try {
-      const result = await this.getCaptionsViaScraping(videoId);
-      if (result) return result;
-    } catch (error) {
-      this.logger.warn(`[Captions] Scraping failed for ${videoId}: ${error.message}`);
+    // Fallback: Scrape YouTube page (2 attempts)
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const result = await this.getCaptionsViaScraping(videoId);
+        if (result) return result;
+        break;
+      } catch (error) {
+        this.logger.warn(`[Captions] Scraping attempt ${attempt} failed for ${videoId}: ${error.message}`);
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
+      }
     }
 
     this.logger.warn(`[Captions] All methods failed for ${videoId}`);

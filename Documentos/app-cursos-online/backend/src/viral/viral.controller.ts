@@ -95,8 +95,11 @@ export class ViralController {
   @Post('videos/:id/transcribe')
   @Roles(UserRole.CREATOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Transcribir video viral' })
-  async transcribeVideo(@Param('id') videoId: string) {
-    return this.viralService.transcribeVideo(videoId);
+  async transcribeVideo(
+    @Param('id') videoId: string,
+    @Body() body: { forceRefresh?: boolean },
+  ) {
+    return this.viralService.transcribeVideo(videoId, body?.forceRefresh);
   }
 
   @Post('videos/:id/segments')
