@@ -116,7 +116,7 @@ export default function ConocimientoPage() {
       .get<KBStats>("/knowledge-base/stats", token)
       .then((data) => {
         setStats(data);
-        setCategories(Object.keys(data.byCategory));
+        setCategories(Object.keys(data.byCategory || {}));
       })
       .catch(() => {})
       .finally(() => setLoadingStats(false));
@@ -219,7 +219,7 @@ export default function ConocimientoPage() {
               Por fuente
             </div>
             <div className="mt-1 space-y-1">
-              {Object.entries(stats.bySourceType).map(([key, count]) => (
+              {Object.entries(stats.bySourceType || {}).map(([key, count]) => (
                 <div key={key} className="flex items-center justify-between text-sm">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${sourceLabels[key]?.color || "bg-gray-100 text-gray-700"}`}>
                     {sourceLabels[key]?.label || key}
@@ -235,7 +235,7 @@ export default function ConocimientoPage() {
               Por categoria
             </div>
             <div className="mt-1 max-h-24 space-y-1 overflow-y-auto">
-              {Object.entries(stats.byCategory).map(([key, count]) => (
+              {Object.entries(stats.byCategory || {}).map(([key, count]) => (
                 <div key={key} className="flex items-center justify-between text-sm">
                   <span className="truncate text-gray-600">{key}</span>
                   <span className="ml-2 font-medium text-gray-700">{count}</span>

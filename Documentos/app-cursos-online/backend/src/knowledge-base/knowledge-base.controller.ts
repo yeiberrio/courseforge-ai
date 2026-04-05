@@ -35,7 +35,7 @@ export class KnowledgeBaseController {
   }
 
   @Get('stats')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.CREATOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Estadísticas de la base de conocimiento' })
   async getStats() {
     return this.kbService.getStats();

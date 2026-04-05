@@ -356,14 +356,15 @@ export default function ViralPage() {
   const handleExport = async () => {
     if (!token || results.length === 0) return;
     setExporting(true);
+    setError(null);
 
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1";
-      const response = await fetch(`${API_URL}/viral/export`, {
+      const response = await fetch(`${API_URL}/viral/export/excel`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({
           videos: results.map((v) => ({
@@ -374,7 +375,10 @@ export default function ViralPage() {
         }),
       });
 
-      if (!response.ok) throw new Error("Error al exportar");
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ message: "Error al exportar" }));
+        throw new Error(err.message || `Error ${response.status}`);
+      }
 
       const blob = await response.blob();
       const date = new Date().toISOString().split("T")[0];

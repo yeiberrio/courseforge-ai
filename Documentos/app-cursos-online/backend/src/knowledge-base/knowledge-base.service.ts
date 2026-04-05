@@ -199,7 +199,7 @@ export class KnowledgeBaseService {
    * List all knowledge base documents.
    */
   async listDocuments(options?: { sourceType?: string; category?: string }) {
-    return this.prisma.knowledgeBaseDocument.findMany({
+    const docs = await this.prisma.knowledgeBaseDocument.findMany({
       where: {
         is_active: true,
         ...(options?.sourceType ? { source_type: options.sourceType as any } : {}),
@@ -207,6 +207,16 @@ export class KnowledgeBaseService {
       },
       orderBy: { created_at: 'desc' },
     });
+
+    return docs.map((doc) => ({
+      id: doc.id,
+      title: doc.title,
+      category: doc.category,
+      tags: doc.tags,
+      sourceType: doc.source_type,
+      chunkCount: doc.chunk_count || 0,
+      ingestedAt: doc.ingested_at?.toISOString() || doc.created_at.toISOString(),
+    }));
   }
 
   /**
@@ -300,11 +310,21 @@ export class KnowledgeBaseService {
       where: { is_active: true },
     });
 
+    const bySourceType: Record<string, number> = {};
+    for (const row of bySource) {
+      bySourceType[row.source_type] = row._count;
+    }
+
+    const byCategoryMap: Record<string, number> = {};
+    for (const row of byCategory) {
+      if (row.category) byCategoryMap[row.category] = row._count;
+    }
+
     return {
-      total_documents: totalDocs,
-      total_chunks: totalChunks,
-      by_source: bySource,
-      by_category: byCategory,
+      totalDocuments: totalDocs,
+      totalChunks: totalChunks,
+      bySourceType,
+      byCategory: byCategoryMap,
     };
   }
 
