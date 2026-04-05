@@ -5,7 +5,6 @@ import { ViralCategory, ContentLength } from '@prisma/client';
 import { writeFileSync, mkdirSync, existsSync, unlinkSync, createWriteStream } from 'fs';
 import { join } from 'path';
 import { execSync } from 'child_process';
-import { pipeline } from 'stream/promises';
 
 const VIRAL_KEYWORDS: Record<string, string[]> = {
   RELIGIOUS: [
@@ -1323,7 +1322,12 @@ PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis único
 
       const videoStream = ytdl.downloadFromInfo(info, { format });
       const fileStream = createWriteStream(sourceFile);
-      await pipeline(videoStream, fileStream);
+      await new Promise<void>((resolve, reject) => {
+        videoStream.pipe(fileStream);
+        fileStream.on('finish', resolve);
+        fileStream.on('error', reject);
+        videoStream.on('error', reject);
+      });
 
       this.logger.log(`[Merge] Downloaded source video (${(existsSync(sourceFile) ? Math.round(require('fs').statSync(sourceFile).size / 1024 / 1024) : '?')}MB)`);
 
@@ -1779,7 +1783,135 @@ PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis único
       }
     }
 
+    // Final fallback: Download audio + OpenAI Whisper transcription
+    if (this.openaiApiKey) {
+      try {
+        this.logger.log(`[Captions] Trying Whisper transcription for ${videoId}...`);
+        const result = await this.transcribeViaWhisper(videoId);
+        if (result) return result;
+      } catch (error) {
+        this.logger.warn(`[Captions] Whisper failed for ${videoId}: ${error.message}`);
+      }
+    }
+
     this.logger.warn(`[Captions] All methods failed for ${videoId}`);
+    return null;
+  }
+
+  /**
+   * Download audio from YouTube and transcribe with OpenAI Whisper API.
+   * Used as final fallback when YouTube caption endpoints are blocked.
+   */
+  private async transcribeViaWhisper(videoId: string): Promise<string | null> {
+    const ytdl = (await import('@distube/ytdl-core')).default;
+
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const info = await ytdl.getInfo(url);
+
+    // Pick audio-only format (smallest, fastest to download)
+    const format = ytdl.chooseFormat(info.formats, { filter: 'audioonly', quality: 'lowestaudio' })
+      || ytdl.chooseFormat(info.formats, { filter: 'audioonly' });
+
+    if (!format) {
+      this.logger.warn(`[Whisper] No audio format found for ${videoId}`);
+      return null;
+    }
+
+    this.logger.log(`[Whisper] Downloading audio for ${videoId} (format: ${format.mimeType}, ${format.contentLength ? Math.round(Number(format.contentLength) / 1024 / 1024) + 'MB' : 'unknown size'})`);
+
+    // Download audio to buffer (max 25MB for Whisper API)
+    const audioStream = ytdl.downloadFromInfo(info, { format });
+    const chunks: Buffer[] = [];
+    let totalSize = 0;
+    const MAX_SIZE = 24 * 1024 * 1024; // 24MB (Whisper limit is 25MB)
+
+    for await (const chunk of audioStream) {
+      chunks.push(chunk as Buffer);
+      totalSize += (chunk as Buffer).length;
+      if (totalSize > MAX_SIZE) {
+        this.logger.warn(`[Whisper] Audio exceeds 24MB for ${videoId}, truncating`);
+        break;
+      }
+    }
+
+    const audioBuffer = Buffer.concat(chunks);
+    this.logger.log(`[Whisper] Downloaded ${Math.round(audioBuffer.length / 1024 / 1024)}MB audio for ${videoId}`);
+
+    // Determine file extension from mime type
+    const ext = format.mimeType?.includes('webm') ? 'webm'
+      : format.mimeType?.includes('mp4') ? 'mp4'
+      : format.mimeType?.includes('ogg') ? 'ogg'
+      : 'mp3';
+
+    // Save temp audio file for Whisper API upload
+    const tmpDir = join(process.cwd(), 'uploads', 'generated');
+    mkdirSync(tmpDir, { recursive: true });
+    const tmpFile = join(tmpDir, `whisper_${Date.now()}.${ext}`);
+    writeFileSync(tmpFile, audioBuffer);
+
+    // Call OpenAI Whisper API using form-data
+    const FormDataLib = (await import('form-data')).default;
+    const { createReadStream } = await import('fs');
+    const formData = new FormDataLib();
+    formData.append('file', createReadStream(tmpFile), { filename: `audio.${ext}` });
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'es');
+    formData.append('response_format', 'verbose_json');
+    formData.append('timestamp_granularities[]', 'segment');
+
+    let data: any;
+    try {
+      data = await new Promise((resolve, reject) => {
+        const https = require('https');
+        const formHeaders = formData.getHeaders();
+        const req = https.request('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.openaiApiKey}`,
+            ...formHeaders,
+          },
+        }, (res: any) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => {
+            const body = Buffer.concat(chunks).toString();
+            try {
+              const json = JSON.parse(body);
+              if (res.statusCode >= 400) {
+                reject(new Error(`Whisper API ${res.statusCode}: ${json.error?.message || body}`));
+              } else {
+                resolve(json);
+              }
+            } catch { reject(new Error(`Whisper API parse error: ${body.substring(0, 200)}`)); }
+          });
+        });
+        req.on('error', reject);
+        formData.pipe(req);
+      });
+    } finally {
+      try { unlinkSync(tmpFile); } catch { /* ignore */ }
+    }
+
+    if (!data.segments || data.segments.length === 0) {
+      this.logger.warn(`[Whisper] No segments returned for ${videoId}`);
+      return data.text ? `[0:00] ${data.text}` : null;
+    }
+
+    // Convert Whisper segments to [M:SS] format
+    const lines = data.segments.map((seg: any) => {
+      const totalSec = Math.floor(seg.start);
+      const mins = Math.floor(totalSec / 60);
+      const secs = totalSec % 60;
+      const timestamp = `${mins}:${String(secs).padStart(2, '0')}`;
+      const text = (seg.text || '').trim();
+      return text ? `[${timestamp}] ${text}` : null;
+    }).filter(Boolean) as string[];
+
+    if (lines.length > 0) {
+      this.logger.log(`[Whisper] Transcribed ${lines.length} segments for ${videoId}`);
+      return lines.join('\n');
+    }
+
     return null;
   }
 
