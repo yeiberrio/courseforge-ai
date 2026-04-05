@@ -1540,110 +1540,240 @@ Extrae los segmentos más valiosos en formato JSON.`;
    * Uses YouTube's internal timedtext endpoint (no OAuth required).
    */
   private async getYouTubeCaptions(videoId: string): Promise<string | null> {
+    // Strategy 1: InnerTube API (Android client - most reliable, no browser blocks)
     try {
-      // Step 1: Fetch the video page to extract caption track URLs
-      const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-        headers: { 'Accept-Language': 'es,en;q=0.9' },
-      });
-      if (!pageResponse.ok) return null;
-
-      const pageHtml = await pageResponse.text();
-
-      // Extract captions JSON from the page's ytInitialPlayerResponse
-      const captionsMatch = pageHtml.match(/"captionTracks":\s*(\[.*?\])/);
-      if (!captionsMatch) return null;
-
-      let captionTracks: any[];
-      try {
-        captionTracks = JSON.parse(captionsMatch[1]);
-      } catch {
-        return null;
-      }
-
-      if (!captionTracks || captionTracks.length === 0) return null;
-
-      // Prefer: Spanish manual > Spanish auto > any manual > any auto
-      const spanishManual = captionTracks.find(
-        (t: any) => (t.languageCode === 'es' || t.languageCode === 'es-419') && t.kind !== 'asr',
-      );
-      const spanishAuto = captionTracks.find(
-        (t: any) => (t.languageCode === 'es' || t.languageCode === 'es-419'),
-      );
-      const anyManual = captionTracks.find((t: any) => t.kind !== 'asr');
-      const anyTrack = captionTracks[0];
-
-      const track = spanishManual || spanishAuto || anyManual || anyTrack;
-      if (!track?.baseUrl) return null;
-
-      // Step 2: Fetch the actual captions in XML format
-      const captionUrl = track.baseUrl + '&fmt=srv3';
-      const captionResponse = await fetch(captionUrl);
-      if (!captionResponse.ok) return null;
-
-      const captionXml = await captionResponse.text();
-
-      // Step 3: Parse XML captions into timestamped text
-      // Format: <p t="startMs" d="durationMs">text</p>
-      const lines: string[] = [];
-      const pRegex = /<p\s+t="(\d+)"\s+d="(\d+)"[^>]*>([\s\S]*?)<\/p>/g;
-      let match: RegExpExecArray | null;
-
-      while ((match = pRegex.exec(captionXml)) !== null) {
-        const startMs = parseInt(match[1]);
-        const text = match[3]
-          .replace(/<[^>]+>/g, '') // strip HTML tags
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .replace(/\n/g, ' ')
-          .trim();
-
-        if (!text) continue;
-
-        const totalSeconds = Math.floor(startMs / 1000);
-        const mins = Math.floor(totalSeconds / 60);
-        const secs = totalSeconds % 60;
-        const timestamp = `${mins}:${String(secs).padStart(2, '0')}`;
-
-        lines.push(`[${timestamp}] ${text}`);
-      }
-
-      // Fallback: try <text> format (older caption format)
-      if (lines.length === 0) {
-        const textRegex = /<text\s+start="([\d.]+)"\s+dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
-        while ((match = textRegex.exec(captionXml)) !== null) {
-          const startSec = parseFloat(match[1]);
-          const text = match[3]
-            .replace(/<[^>]+>/g, '')
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'")
-            .replace(/\n/g, ' ')
-            .trim();
-
-          if (!text) continue;
-
-          const totalSeconds = Math.floor(startSec);
-          const mins = Math.floor(totalSeconds / 60);
-          const secs = totalSeconds % 60;
-          const timestamp = `${mins}:${String(secs).padStart(2, '0')}`;
-
-          lines.push(`[${timestamp}] ${text}`);
-        }
-      }
-
-      if (lines.length === 0) return null;
-
-      this.logger.log(`[Captions] Fetched ${lines.length} caption lines for video ${videoId} (lang: ${track.languageCode})`);
-      return lines.join('\n');
+      const result = await this.getCaptionsViaInnerTube(videoId);
+      if (result) return result;
     } catch (error) {
-      this.logger.warn(`[Captions] Failed to fetch captions for ${videoId}: ${error.message}`);
+      this.logger.warn(`[Captions] InnerTube method failed for ${videoId}: ${error.message}`);
+    }
+
+    // Strategy 2: Scrape YouTube page directly (fallback)
+    try {
+      const result = await this.getCaptionsViaScraping(videoId);
+      if (result) return result;
+    } catch (error) {
+      this.logger.warn(`[Captions] Scraping method failed for ${videoId}: ${error.message}`);
+    }
+
+    this.logger.warn(`[Captions] All caption extraction methods failed for ${videoId}`);
+    return null;
+  }
+
+  private async getCaptionsViaInnerTube(videoId: string): Promise<string | null> {
+    const INNERTUBE_URL = 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false';
+    const CLIENT_VERSION = '20.10.38';
+    const ANDROID_UA = `com.google.android.youtube/${CLIENT_VERSION} (Linux; U; Android 14)`;
+
+    const response = await fetch(INNERTUBE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': ANDROID_UA,
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: 'ANDROID',
+            clientVersion: CLIENT_VERSION,
+          },
+        },
+        videoId,
+      }),
+    });
+
+    if (!response.ok) {
+      this.logger.warn(`[Captions] InnerTube: API returned ${response.status} for ${videoId}`);
       return null;
     }
+
+    const data = await response.json();
+    const captionTracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+
+    if (!Array.isArray(captionTracks) || captionTracks.length === 0) {
+      this.logger.warn(`[Captions] InnerTube: No caption tracks for ${videoId}`);
+      return null;
+    }
+
+    return this.fetchAndParseCaptionTracks(captionTracks, videoId, 'InnerTube');
+  }
+
+  private async getCaptionsViaScraping(videoId: string): Promise<string | null> {
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+    const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'User-Agent': userAgent,
+        'Accept-Language': 'es,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+    if (!pageResponse.ok) {
+      this.logger.warn(`[Captions] Scraping: YouTube page returned ${pageResponse.status} for ${videoId}`);
+      return null;
+    }
+
+    const pageHtml = await pageResponse.text();
+
+    // Extract ytInitialPlayerResponse JSON properly (balanced braces)
+    let captionTracks: any[] | null = null;
+    const marker = 'var ytInitialPlayerResponse = ';
+    const startIdx = pageHtml.indexOf(marker);
+    if (startIdx !== -1) {
+      const jsonStart = startIdx + marker.length;
+      let depth = 0;
+      for (let i = jsonStart; i < pageHtml.length; i++) {
+        if (pageHtml[i] === '{') depth++;
+        else if (pageHtml[i] === '}') {
+          depth--;
+          if (depth === 0) {
+            try {
+              const playerData = JSON.parse(pageHtml.slice(jsonStart, i + 1));
+              captionTracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+            } catch {
+              // malformed JSON
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    // Fallback: regex patterns
+    if (!captionTracks) {
+      const patterns = [
+        /"captionTracks":\s*(\[.*?\])\s*[,}]/,
+        /captionTracks"\s*:\s*(\[.*?\])/,
+      ];
+      for (const pattern of patterns) {
+        const match = pageHtml.match(pattern);
+        if (match) {
+          try {
+            captionTracks = JSON.parse(match[1]);
+            if (captionTracks && captionTracks.length > 0) break;
+          } catch {
+            captionTracks = null;
+          }
+        }
+      }
+    }
+
+    if (!captionTracks || captionTracks.length === 0) {
+      this.logger.warn(`[Captions] Scraping: No caption tracks found in HTML for ${videoId}`);
+      return null;
+    }
+
+    return this.fetchAndParseCaptionTracks(captionTracks, videoId, 'Scraping');
+  }
+
+  private async fetchAndParseCaptionTracks(captionTracks: any[], videoId: string, source: string): Promise<string | null> {
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+    // Prefer: Spanish manual > Spanish auto > any manual > any auto
+    const spanishManual = captionTracks.find(
+      (t: any) => (t.languageCode === 'es' || t.languageCode === 'es-419') && t.kind !== 'asr',
+    );
+    const spanishAuto = captionTracks.find(
+      (t: any) => (t.languageCode === 'es' || t.languageCode === 'es-419'),
+    );
+    const anyManual = captionTracks.find((t: any) => t.kind !== 'asr');
+    const anyTrack = captionTracks[0];
+
+    const track = spanishManual || spanishAuto || anyManual || anyTrack;
+    if (!track?.baseUrl) {
+      this.logger.warn(`[Captions] ${source}: Track found but no baseUrl for ${videoId}`);
+      return null;
+    }
+
+    // Fetch caption content - try without fmt first (default XML), then specific formats
+    const formats = ['', '&fmt=srv3', '&fmt=srv1'];
+    let lines: string[] = [];
+
+    for (const fmt of formats) {
+      const captionUrl = track.baseUrl + fmt;
+      const captionResponse = await fetch(captionUrl, {
+        headers: { 'User-Agent': userAgent },
+      });
+      if (!captionResponse.ok) continue;
+
+      const captionContent = await captionResponse.text();
+      if (!captionContent || captionContent.length === 0) continue;
+
+      lines = this.parseCaptionXml(captionContent);
+      if (lines.length > 0) break;
+    }
+
+    if (lines.length === 0) {
+      this.logger.warn(`[Captions] ${source}: Could not parse captions for ${videoId}`);
+      return null;
+    }
+
+    this.logger.log(`[Captions] ${source}: Fetched ${lines.length} lines for ${videoId} (lang: ${track.languageCode})`);
+    return lines.join('\n');
+  }
+
+  private parseCaptionXml(captionXml: string): string[] {
+    const lines: string[] = [];
+    let match: RegExpExecArray | null;
+
+    // Format 1: <p t="startMs" d="durationMs">text</p> (srv3)
+    const pRegex = /<p\s+t="(\d+)"\s+d="(\d+)"[^>]*>([\s\S]*?)<\/p>/g;
+    while ((match = pRegex.exec(captionXml)) !== null) {
+      const startMs = parseInt(match[1]);
+      const text = this.cleanCaptionText(match[3]);
+      if (!text) continue;
+      lines.push(`[${this.formatTimestamp(startMs / 1000)}] ${text}`);
+    }
+
+    // Format 2: <text start="seconds" dur="seconds">text</text> (srv1/default)
+    if (lines.length === 0) {
+      const textRegex = /<text\s+start="([\d.]+)"\s+dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
+      while ((match = textRegex.exec(captionXml)) !== null) {
+        const startSec = parseFloat(match[1]);
+        const text = this.cleanCaptionText(match[3]);
+        if (!text) continue;
+        lines.push(`[${this.formatTimestamp(startSec)}] ${text}`);
+      }
+    }
+
+    // Format 3: JSON-based captions (newer format)
+    if (lines.length === 0) {
+      try {
+        const json = JSON.parse(captionXml);
+        const events = json.events || [];
+        for (const event of events) {
+          if (!event.segs) continue;
+          const text = event.segs.map((s: any) => s.utf8 || '').join('').trim();
+          if (!text || text === '\n') continue;
+          const startSec = (event.tStartMs || 0) / 1000;
+          lines.push(`[${this.formatTimestamp(startSec)}] ${text}`);
+        }
+      } catch {
+        // Not JSON
+      }
+    }
+
+    return lines;
+  }
+
+  private cleanCaptionText(raw: string): string {
+    return raw
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\n/g, ' ')
+      .trim();
+  }
+
+  private formatTimestamp(totalSeconds: number): string {
+    const secs = Math.floor(totalSeconds);
+    const mins = Math.floor(secs / 60);
+    const remainingSecs = secs % 60;
+    return `${mins}:${String(remainingSecs).padStart(2, '0')}`;
   }
 
   private formatDuration(totalSeconds: number): string {
