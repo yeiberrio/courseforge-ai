@@ -183,6 +183,7 @@ export class ViralService {
   private readonly youtubeApiKey: string;
   private readonly anthropicApiKey: string;
   private readonly openaiApiKey: string;
+  private readonly ytDlpCookiesFile: string;
 
   constructor(
     private configService: ConfigService,
@@ -191,6 +192,18 @@ export class ViralService {
     this.youtubeApiKey = this.configService.get<string>('YOUTUBE_API_KEY') || '';
     this.anthropicApiKey = this.configService.get<string>('ANTHROPIC_API_KEY') || '';
     this.openaiApiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
+    this.ytDlpCookiesFile = this.configService.get<string>('YT_DLP_COOKIES_FILE') || '';
+  }
+
+  /**
+   * Build yt-dlp base command with --js-runtimes nodejs and optional cookies.
+   */
+  private getYtDlpCmd(): string {
+    let cmd = 'yt-dlp --remote-components ejs:github';
+    if (this.ytDlpCookiesFile && existsSync(this.ytDlpCookiesFile)) {
+      cmd += ` --cookies "${this.ytDlpCookiesFile}"`;
+    }
+    return cmd;
   }
 
   isAvailable(): boolean {
@@ -1311,7 +1324,7 @@ PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis único
       const url = `https://www.youtube.com/watch?v=${youtubeVideoId}`;
 
       execSync(
-        `yt-dlp -f "best[height<=720][ext=mp4]/best[ext=mp4]/best" --no-playlist -o "${sourceFile}" "${url}"`,
+        `${this.getYtDlpCmd()} -f "best[height<=720][ext=mp4]/best[ext=mp4]/best" --no-playlist -o "${sourceFile}" "${url}"`,
         { timeout: 180000 },
       );
 
@@ -1804,7 +1817,7 @@ PRIORIZA: datos clave, declaraciones importantes, revelaciones, análisis único
 
     try {
       execSync(
-        `yt-dlp -x --audio-format mp3 --audio-quality 5 --no-playlist -o "${tmpFile}" "${url}"`,
+        `${this.getYtDlpCmd()} -x --audio-format mp3 --audio-quality 5 --no-playlist -o "${tmpFile}" "${url}"`,
         { timeout: 120000 },
       );
     } catch (dlError) {

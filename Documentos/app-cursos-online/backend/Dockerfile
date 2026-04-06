@@ -39,8 +39,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     python3 \
     python3-pip \
-    && pip3 install --break-system-packages edge-tts yt-dlp \
+    curl \
+    unzip \
+    && pip3 install --break-system-packages edge-tts yt-dlp --upgrade \
     && rm -rf /var/lib/apt/lists/*
+
+# Install deno (required by yt-dlp for YouTube JS challenge solving)
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
+ENV DENO_DIR=/tmp/deno
+
+# Configure yt-dlp to always use remote EJS solver
+RUN echo '--remote-components ejs:github' > /etc/yt-dlp.conf
 
 # Copy built application
 COPY --from=builder /app/dist ./dist
@@ -49,6 +58,9 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/prisma ./prisma
 
 RUN mkdir -p uploads/documents uploads/generated
+
+# Copy YouTube cookies if available (for yt-dlp authentication)
+COPY cookies.tx[t] /app/cookies.txt
 
 EXPOSE 3000
 

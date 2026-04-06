@@ -33,6 +33,9 @@ build/
 # backend uploads
 backend/uploads/
 
+# yt-dlp cookies (sensitive)
+cookies.txt
+
 # capacitor native
 apps/web/android/
 apps/web/ios/
