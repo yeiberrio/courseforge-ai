@@ -64,4 +64,8 @@ COPY cookies.tx[t] /app/cookies.txt
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
+CMD ["sh", "-c", "\
+  if [ -n \"$YT_DLP_COOKIES_B64\" ] && [ ! -f /app/cookies.txt ]; then \
+    echo \"$YT_DLP_COOKIES_B64\" | base64 -d > /app/cookies.txt; \
+  fi && \
+  npx prisma migrate deploy && node dist/src/main.js"]
